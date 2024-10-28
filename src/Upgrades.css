@@ -1,13 +1,5 @@
-/* App.css */
+/* Upgrades.css */
 
-.App {
-  position: relative;
-  background-color: #222;
-  min-height: 100vh;
-  overflow: hidden;
-}
-
-/* Overlay styles for Leaderboard and Upgrades */
 .overlay {
   position: fixed;
   top: 0;
@@ -26,7 +18,7 @@
   color: white;
   width: 300px;
   border-radius: 8px;
-  text-align: center;
+  text-align: left;
 }
 
 .overlay-content h2 {
@@ -42,4 +34,32 @@
   color: white;
   font-size: 20px;
   cursor: pointer;
+}
+
+.overlay-content .points-display {
+  margin-bottom: 20px;
+}
+
+.overlay-content ul {
+  list-style: none;
+  padding: 0;
+}
+
+.overlay-content li {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.overlay-content button {
+  padding: 5px 10px;
+  cursor: pointer;
+  background-color: #3B82F6;
+  color: white;
+  border: none;
+}
+
+.overlay-content button:disabled {
+  background-color: #555;
+  cursor: not-allowed;
 }
