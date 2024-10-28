@@ -1,6 +1,6 @@
-// Cube.jsx
+// src/Cube.jsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import './Cube.css';
 
 const CUBE_SIZE = 600;
@@ -79,7 +79,8 @@ const Face = ({ layers, faceName, handleClick, transform, gridSize }) => (
   </div>
 );
 
-const Cube = ({ onBlockClick }) => {
+// Modify the component to accept a ref
+const Cube = forwardRef(({ onBlockClick }, ref) => {
   const [theta, setTheta] = useState(45); // Horizontal angle
   const [phi, setPhi] = useState(-30); // Vertical angle
   const [isDragging, setIsDragging] = useState(false);
@@ -127,6 +128,37 @@ const Cube = ({ onBlockClick }) => {
       onBlockClick(); // Notify parent component
     }
   };
+
+  // Handle removing a random block
+  const removeRandomBlock = () => {
+    // Collect all visible blocks on the top layer
+    const faceNames = ['front', 'back', 'top', 'bottom', 'left', 'right'];
+    const visibleBlocks = [];
+
+    faceNames.forEach((face) => {
+      layers[0][face].forEach((row, rowIndex) => {
+        row.forEach((block, colIndex) => {
+          if (block) {
+            visibleBlocks.push({ face, row: rowIndex, col: colIndex });
+          }
+        });
+      });
+    });
+
+    if (visibleBlocks.length > 0) {
+      // Select a random block
+      const randomIndex = Math.floor(Math.random() * visibleBlocks.length);
+      const { face, row, col } = visibleBlocks[randomIndex];
+
+      // Remove the block
+      handleClick(face, row, col);
+    }
+  };
+
+  // Expose removeRandomBlock to parent via ref
+  useImperativeHandle(ref, () => ({
+    removeRandomBlock,
+  }));
 
   // Handle mouse events for rotation
   const handleMouseDown = (e) => {
@@ -241,6 +273,6 @@ const Cube = ({ onBlockClick }) => {
       </div>
     </div>
   );
-};
+});
 
 export default Cube;

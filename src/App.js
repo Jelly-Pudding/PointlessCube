@@ -1,6 +1,6 @@
-// App.js
+// src/App.js
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Cube from './Cube';
 import Menu from './Menu';
 import Upgrades from './Upgrades';
@@ -12,12 +12,16 @@ function App() {
   const [showUpgrades, setShowUpgrades] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
 
+  // Ref to access Cube methods
+  const cubeRef = useRef();
+
   // Define available upgrades
   const upgrades = [
     { name: 'Double Points', cost: 50, effect: 'double' },
     { name: 'Auto Clicker', cost: 100, effect: 'autoClicker' },
   ];
 
+  // Handle block click (from manual clicking or autoclicker)
   const handleBlockClick = () => {
     let pointsEarned = 1;
 
@@ -57,8 +61,11 @@ function App() {
     let interval;
     if (ownedUpgrades.includes('autoClicker')) {
       interval = setInterval(() => {
-        setPoints((prevPoints) => prevPoints + 1);
-      }, 1000); // Adds 1 point every second
+        // Remove a random block from the cube
+        if (cubeRef.current) {
+          cubeRef.current.removeRandomBlock();
+        }
+      }, 1000); // Adjust the interval as needed (e.g., every second)
     }
     return () => {
       if (interval) clearInterval(interval);
@@ -93,7 +100,7 @@ function App() {
           </div>
         </div>
       )}
-      <Cube onBlockClick={handleBlockClick} />
+      <Cube onBlockClick={handleBlockClick} ref={cubeRef} />
     </div>
   );
 }
