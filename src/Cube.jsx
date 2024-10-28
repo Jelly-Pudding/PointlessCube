@@ -86,7 +86,7 @@ const Cube = ({ onBlockClick }) => {
   const [lastPos, setLastPos] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1500); // Initial perspective value
 
-  const rotationSensitivity = 0.3; // Adjust this value to change rotation speed
+  const rotationSensitivity = 0.2; // Adjusted rotation sensitivity
 
   // Initialize with multiple layers and assign colors
   const [layers, setLayers] = useState([
@@ -139,8 +139,11 @@ const Cube = ({ onBlockClick }) => {
     const deltaX = e.clientX - lastPos.x;
     const deltaY = e.clientY - lastPos.y;
 
-    setTheta((prevTheta) => prevTheta - deltaX * rotationSensitivity);
-    setPhi((prevPhi) => prevPhi - deltaY * rotationSensitivity);
+    setTheta((prevTheta) => prevTheta + deltaX * rotationSensitivity);
+    setPhi((prevPhi) => {
+      const newPhi = prevPhi - deltaY * rotationSensitivity;
+      return Math.max(-90, Math.min(90, newPhi)); // Constrain between -90 and 90 degrees
+    });
 
     setLastPos({ x: e.clientX, y: e.clientY });
   };
@@ -153,28 +156,36 @@ const Cube = ({ onBlockClick }) => {
   const handleWheel = (e) => {
     e.preventDefault();
     setZoom((prevZoom) => {
-      let newZoom = prevZoom + e.deltaY * 5;
-      return Math.min(Math.max(newZoom, 1000), 8000);
+      // Use exponential scaling for smoother zoom
+      const zoomFactor = Math.exp(e.deltaY * 0.001); // Adjust sensitivity
+      let newZoom = prevZoom * zoomFactor;
+      newZoom = Math.min(Math.max(newZoom, 500), 5000); // Constrain zoom value
+      return newZoom;
     });
   };
 
   // Compute the cube's transform
   const cubeTransform = `
     translate(-50%, -50%)
-    rotateY(${theta}deg)
     rotateX(${phi}deg)
+    rotateY(${theta}deg)
   `;
 
   return (
-    <div className="cube-container">
+    <div
+      className="cube-container"
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      onWheel={handleWheel}
+    >
       <div
         className="cube-wrapper"
-        style={{ '--perspective': `${zoom}px` }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
+        style={{
+          perspective: `${zoom}px`,
+          transition: 'perspective 0.1s ease-out', // Smooth perspective changes
+        }}
       >
         <div
           className="cube"

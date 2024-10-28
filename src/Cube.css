@@ -2,20 +2,18 @@
 
 .cube-container {
   width: 100%;
-  max-width: 800px;
-  margin: auto;
-  padding: 20px;
-  position: relative;
-  overflow: visible; /* Ensure overflow is visible */
+  height: 100vh; /* Full viewport height to center vertically */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden; /* Hide scrollbars */
 }
 
 .cube-wrapper {
   position: relative;
-  width: 100%;
-  padding-bottom: 100%; /* Maintain aspect ratio */
-  overflow: visible; /* Ensure overflow is visible */
+  width: 600px;
+  height: 600px;
   cursor: grab;
-  perspective: var(--perspective, 800px); /* Use CSS variable with default */
 }
 
 .cube {
@@ -23,7 +21,6 @@
   top: 50%; /* Center vertically */
   left: 50%; /* Center horizontally */
   transform-style: preserve-3d;
-  transition: transform 0.1s;
   transform-origin: center;
 }
 
@@ -56,6 +53,6 @@
   filter: brightness(1.2);
 }
 
-.cube-wrapper:active {
+.cube-container:active {
   cursor: grabbing;
 }
