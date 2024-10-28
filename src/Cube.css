@@ -1,0 +1,63 @@
+/* Cube.css */
+
+.cube-container {
+    width: 100%;
+    max-width: 600px;
+    margin: auto;
+    padding: 20px;
+  }
+  
+  .cube-wrapper {
+    position: relative;
+    width: 100%;
+    padding-bottom: 100%; /* Maintain aspect ratio */
+    overflow: visible; /* Changed from hidden to visible */
+    cursor: grab;
+  }
+  
+  .cube {
+    position: absolute;
+    top: 50%; /* Adjusted to center vertically */
+    left: 50%; /* Adjusted to center horizontally */
+    transform-style: preserve-3d;
+    transition: transform 0.1s;
+    transform-origin: center;
+  }
+  
+  .face {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+  }
+  
+  .face-layer {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    transition: opacity 0.5s;
+  }
+  
+  .grid-container {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    width: 100%;
+    height: 100%;
+  }
+  
+  .grid-block {
+    width: 100%;
+    height: 100%;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    transition: background-color 0.2s;
+    z-index: 1; /* Added */
+  }
+  
+  .grid-block:hover {
+    filter: brightness(1.2);
+  }
+  
+  .cube-wrapper:active {
+    cursor: grabbing;
+  }
+  
