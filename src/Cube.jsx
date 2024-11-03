@@ -2,7 +2,7 @@ import React, { useState, useEffect, useImperativeHandle, forwardRef, useMemo, u
 import './Cube.css';
 
 const CUBE_SIZE = 600;
-const GRID_SIZE = 2;
+const GRID_SIZE = 50;
 
 // Random color generation
 const generateColor = () => {
@@ -30,23 +30,22 @@ const getNextColor = () => {
   return newColor;
 };
 
-// Audio context moved outside component
+// Reuse audio nodes
 const audioContext = new AudioContext();
-const createBreakSound = () => ({
-  play: () => {
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-    oscillator.start(audioContext.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.1);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-    oscillator.stop(audioContext.currentTime + 0.1);
-  }
-});
+const gainNode = audioContext.createGain();
+gainNode.connect(audioContext.destination);
+
+const playBreakSound = () => {
+  const oscillator = audioContext.createOscillator();
+  oscillator.connect(gainNode);
+  oscillator.type = 'sine';
+  oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
+  gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+  oscillator.start(audioContext.currentTime);
+  oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.1);
+  gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+  oscillator.stop(audioContext.currentTime + 0.1);
+};
 
 const createFace = () =>
   Array(GRID_SIZE).fill().map(() => new Array(GRID_SIZE).fill(true));
@@ -97,6 +96,7 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
               onClick={(e) => {
                 e.stopPropagation();
                 if (isTopLayer) {
+                  e.preventDefault();
                   handleClick(faceName, i, j);
                 }
               }}
@@ -105,7 +105,8 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
                 backgroundColor: blockColor,
                 gridRow: i + 1,
                 gridColumn: j + 1,
-                cursor: isTopLayer ? 'pointer' : 'default'
+                cursor: isTopLayer ? 'pointer' : 'default',
+                touchAction: 'none'  // Prevent touch scrolling from interfering
               }}
             />
           );
@@ -122,7 +123,11 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
       </div>
     </div>
   );
-}, (prevProps, nextProps) => prevProps.layers[0] === nextProps.layers[0]);
+}, (prevProps, nextProps) => 
+  prevProps.transform === nextProps.transform && 
+  prevProps.layers[0] === nextProps.layers[0] &&
+  prevProps.layers[1] === nextProps.layers[1]
+);
 
 const Cube = forwardRef(({ onBlockClick }, ref) => {
   const [theta, setTheta] = useState(45);
@@ -131,12 +136,10 @@ const Cube = forwardRef(({ onBlockClick }, ref) => {
   const [dragStartTime, setDragStartTime] = useState(null);
   const [lastPos, setLastPos] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1500);
-  const [breakSound] = useState(createBreakSound);
   const rotationSensitivity = 0.2;
-  const DRAG_THRESHOLD = 5;  // pixels of movement needed to start drag
-  const DRAG_DELAY = 150;    // milliseconds to hold before drag starts
+  const DRAG_THRESHOLD = 5;
+  const DRAG_DELAY = 150;
 
-  // Initialize with random colors
   const [layers, setLayers] = useState([
     createLayer(getNextColor()),
     createLayer(getNextColor()),
@@ -155,25 +158,25 @@ const Cube = forwardRef(({ onBlockClick }, ref) => {
   }, [layers]);
 
   const handleClick = useCallback((face, row, col) => {
-    setLayers(prevLayers => {
-      // Skip if block is already broken
-      if (!prevLayers[0][face][row][col]) return prevLayers;
-      
-      const newLayers = [...prevLayers];
-      const currentLayer = { ...newLayers[0] };
-      const newFace = [...currentLayer[face]];
-      newFace[row] = [...newFace[row]];
-      newFace[row][col] = false;
-      currentLayer[face] = newFace;
-      newLayers[0] = currentLayer;
+    requestAnimationFrame(() => {
+      setLayers(prevLayers => {
+        if (!prevLayers[0][face][row][col]) return prevLayers;
+        
+        const newLayers = [...prevLayers];
+        const currentLayer = { ...newLayers[0] };
+        const newFace = [...currentLayer[face]];
+        newFace[row] = [...newFace[row]];
+        newFace[row][col] = false;
+        currentLayer[face] = newFace;
+        newLayers[0] = currentLayer;
 
-      // Play sound immediately
-      breakSound?.play();
-      onBlockClick?.();
+        playBreakSound();
+        onBlockClick?.();
 
-      return newLayers;
+        return newLayers;
+      });
     });
-  }, [breakSound, onBlockClick]);
+  }, [onBlockClick]);
 
   const removeRandomBlock = useCallback(() => {
     const faceNames = ['front', 'back', 'top', 'bottom', 'left', 'right'];
@@ -208,10 +211,8 @@ const Cube = forwardRef(({ onBlockClick }, ref) => {
   const handleMouseMove = useCallback((e) => {
     if (!dragStartTime) return;
 
-    // Check if enough time has passed
     if (Date.now() - dragStartTime < DRAG_DELAY) return;
 
-    // Check if moved enough pixels
     const deltaX = Math.abs(e.clientX - lastPos.x);
     const deltaY = Math.abs(e.clientY - lastPos.y);
     
