@@ -1,43 +1,31 @@
-import React, { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
+import React, { useState, useEffect, useImperativeHandle, forwardRef, useMemo, useCallback } from 'react';
 import './Cube.css';
 
 const CUBE_SIZE = 600;
-const GRID_SIZE = 10;
-
-// Define colors for each layer
+const GRID_SIZE = 50;
 const LAYER_COLORS = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6'];
 
-// Create audio context and sound effect
-const createBreakSound = () => {
-  const audioContext = new AudioContext();
-  
-  return {
-    play: () => {
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-      
-      oscillator.start(audioContext.currentTime);
-      oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.1);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-      oscillator.stop(audioContext.currentTime + 0.1);
-    }
-  };
-};
+// Audio context moved outside component
+const audioContext = new AudioContext();
+const createBreakSound = () => ({
+  play: () => {
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+    oscillator.start(audioContext.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.1);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+    oscillator.stop(audioContext.currentTime + 0.1);
+  }
+});
 
-// Helper function to create a face with all blocks visible
 const createFace = () =>
-  Array(GRID_SIZE)
-    .fill()
-    .map(() => Array(GRID_SIZE).fill(true));
+  Array(GRID_SIZE).fill().map(() => new Array(GRID_SIZE).fill(true));
 
-// Helper function to create a new layer with a specific color
 const createLayer = (color) => ({
   front: createFace(),
   back: createFace(),
@@ -48,7 +36,6 @@ const createLayer = (color) => ({
   color: color,
 });
 
-// Function to check if a layer is completely removed
 const isLayerComplete = (layer) => {
   const faceNames = ['front', 'back', 'top', 'bottom', 'left', 'right'];
   return faceNames.every((faceName) =>
@@ -56,66 +43,71 @@ const isLayerComplete = (layer) => {
   );
 };
 
-// Face component responsible for rendering a single face of the cube
-const Face = ({ layers, faceName, handleClick, transform, gridSize }) => (
-  <div className="face" style={{ transform }}>
-    <div className="grid-container" style={{ '--grid-size': gridSize }}>
-      {Array(gridSize)
-        .fill()
-        .map((_, i) =>
-          Array(gridSize)
-            .fill()
-            .map((_, j) => {
-              let blockVisible = false;
-              let blockColor = 'transparent';
-              let isTopLayer = false;
-              for (let layerIndex = 0; layerIndex < layers.length; layerIndex++) {
-                const layer = layers[layerIndex];
-                if (layer[faceName][i][j]) {
-                  blockVisible = true;
-                  blockColor = layer.color;
-                  isTopLayer = layerIndex === 0;
-                  break;
-                }
-              }
-              return (
-                <button
-                  key={`${i}-${j}`}
-                  onClick={() => {
-                    if (isTopLayer && blockVisible) {
-                      handleClick(faceName, i, j);
-                    }
-                  }}
-                  className="grid-block"
-                  style={{
-                    backgroundColor: blockVisible ? blockColor : 'transparent',
-                    cursor: isTopLayer && blockVisible ? 'pointer' : 'default',
-                  }}
-                />
-              );
-            })
-        )}
-    </div>
-  </div>
-);
+// Optimized Face component with React.memo
+const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize }) => {
+  // Pre-calculate visible blocks
+  const blocks = useMemo(() => {
+    const visibleBlocks = [];
+    
+    for (let i = 0; i < gridSize; i++) {
+      for (let j = 0; j < gridSize; j++) {
+        let blockVisible = false;
+        let blockColor = 'transparent';
+        let isTopLayer = false;
 
-// Modify the component to accept a ref
+        // Check all layers
+        for (let layerIndex = 0; layerIndex < layers.length; layerIndex++) {
+          const layer = layers[layerIndex];
+          if (layer[faceName][i][j]) {
+            blockVisible = true;
+            blockColor = layer.color;
+            isTopLayer = layerIndex === 0;
+            break;
+          }
+        }
+
+        if (blockVisible) {
+          visibleBlocks.push(
+            <button
+              key={`${i}-${j}`}
+              onClick={() => {
+                if (isTopLayer) {
+                  handleClick(faceName, i, j);
+                }
+              }}
+              className="grid-block"
+              style={{
+                backgroundColor: blockColor,
+                gridRow: i + 1,
+                gridColumn: j + 1,
+                cursor: isTopLayer ? 'pointer' : 'default'
+              }}
+            />
+          );
+        }
+      }
+    }
+    return visibleBlocks;
+  }, [layers, faceName, handleClick, gridSize]);
+
+  return (
+    <div className="face" style={{ transform }}>
+      <div className="grid-container" style={{ '--grid-size': gridSize }}>
+        {blocks}
+      </div>
+    </div>
+  );
+}, (prevProps, nextProps) => prevProps.layers[0] === nextProps.layers[0]);
+
 const Cube = forwardRef(({ onBlockClick }, ref) => {
   const [theta, setTheta] = useState(45);
   const [phi, setPhi] = useState(-30);
   const [isDragging, setIsDragging] = useState(false);
   const [lastPos, setLastPos] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1500);
-  const [breakSound, setBreakSound] = useState(null);
-
+  const [breakSound] = useState(createBreakSound);
   const rotationSensitivity = 0.2;
 
-  // Initialize sound effect
-  useEffect(() => {
-    setBreakSound(createBreakSound());
-  }, []);
-
-  // Initialize with multiple layers and assign colors
   const [layers, setLayers] = useState([
     createLayer(LAYER_COLORS[0]),
     createLayer(LAYER_COLORS[1]),
@@ -127,43 +119,40 @@ const Cube = forwardRef(({ onBlockClick }, ref) => {
   useEffect(() => {
     const currentLayer = layers[0];
     if (isLayerComplete(currentLayer)) {
-      setLayers((prevLayers) => {
-        const newLayers = prevLayers.slice(1);
-        const newColor = LAYER_COLORS[nextColorIndex % LAYER_COLORS.length];
-        newLayers.push(createLayer(newColor));
-        return newLayers;
+      requestAnimationFrame(() => {
+        setLayers(prevLayers => {
+          const newLayers = prevLayers.slice(1);
+          const newColor = LAYER_COLORS[nextColorIndex % LAYER_COLORS.length];
+          newLayers.push(createLayer(newColor));
+          return newLayers;
+        });
+        setNextColorIndex(prev => prev + 1);
       });
-      setNextColorIndex((prevIndex) => prevIndex + 1);
     }
   }, [layers, nextColorIndex]);
 
-  // Handle block click
-  const handleClick = (face, row, col) => {
-    setLayers((prevLayers) => {
+  const handleClick = useCallback((face, row, col) => {
+    setLayers(prevLayers => {
       const newLayers = [...prevLayers];
       const currentLayer = { ...newLayers[0] };
-      currentLayer[face] = currentLayer[face].map((r, i) =>
-        i === row ? r.map((block, j) => (j === col ? false : block)) : r
-      );
+      const newFace = [...currentLayer[face]];
+      newFace[row] = [...newFace[row]];
+      newFace[row][col] = false;
+      currentLayer[face] = newFace;
       newLayers[0] = currentLayer;
       return newLayers;
     });
 
-    // Play break sound
     if (breakSound) {
-      try {
-        breakSound.play();
-      } catch (error) {
-        console.log('Error playing sound:', error);
-      }
+      breakSound.play();
     }
 
     if (onBlockClick) {
       onBlockClick();
     }
-  };
+  }, [breakSound, onBlockClick]);
 
-  const removeRandomBlock = () => {
+  const removeRandomBlock = useCallback(() => {
     const faceNames = ['front', 'back', 'top', 'bottom', 'left', 'right'];
     const visibleBlocks = [];
 
@@ -182,50 +171,53 @@ const Cube = forwardRef(({ onBlockClick }, ref) => {
       const { face, row, col } = visibleBlocks[randomIndex];
       handleClick(face, row, col);
     }
-  };
+  }, [layers, handleClick]);
 
   useImperativeHandle(ref, () => ({
-    removeRandomBlock,
-  }));
+    removeRandomBlock
+  }), [removeRandomBlock]);
 
-  const handleMouseDown = (e) => {
+  const handleMouseDown = useCallback((e) => {
     setIsDragging(true);
     setLastPos({ x: e.clientX, y: e.clientY });
-  };
+  }, []);
 
-  const handleMouseMove = (e) => {
+  const handleMouseMove = useCallback((e) => {
     if (!isDragging) return;
+
     const deltaX = e.clientX - lastPos.x;
     const deltaY = e.clientY - lastPos.y;
 
-    setTheta((prevTheta) => prevTheta + deltaX * rotationSensitivity);
-    setPhi((prevPhi) => {
-      const newPhi = prevPhi - deltaY * rotationSensitivity;
-      return Math.max(-90, Math.min(90, newPhi));
+    requestAnimationFrame(() => {
+      setTheta(prevTheta => prevTheta + deltaX * rotationSensitivity);
+      setPhi(prevPhi => {
+        const newPhi = prevPhi - deltaY * rotationSensitivity;
+        return Math.max(-90, Math.min(90, newPhi));
+      });
     });
 
     setLastPos({ x: e.clientX, y: e.clientY });
-  };
+  }, [isDragging, lastPos, rotationSensitivity]);
 
-  const handleMouseUp = () => {
+  const handleMouseUp = useCallback(() => {
     setIsDragging(false);
-  };
+  }, []);
 
-  const handleWheel = (e) => {
+  const handleWheel = useCallback((e) => {
     e.preventDefault();
-    setZoom((prevZoom) => {
-      const zoomFactor = Math.exp(e.deltaY * 0.001);
-      let newZoom = prevZoom * zoomFactor;
-      newZoom = Math.min(Math.max(newZoom, 500), 5000);
-      return newZoom;
+    requestAnimationFrame(() => {
+      setZoom(prevZoom => {
+        const zoomFactor = Math.exp(e.deltaY * 0.001);
+        return Math.min(Math.max(prevZoom * zoomFactor, 500), 5000);
+      });
     });
-  };
+  }, []);
 
-  const cubeTransform = `
+  const cubeTransform = useMemo(() => `
     translate(-50%, -50%)
     rotateX(${phi}deg)
     rotateY(${theta}deg)
-  `;
+  `, [phi, theta]);
 
   return (
     <div
@@ -240,7 +232,6 @@ const Cube = forwardRef(({ onBlockClick }, ref) => {
         className="cube-wrapper"
         style={{
           perspective: `${zoom}px`,
-          transition: 'perspective 0.1s ease-out',
         }}
       >
         <div
