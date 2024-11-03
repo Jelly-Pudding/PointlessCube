@@ -3,7 +3,32 @@ import './Cube.css';
 
 const CUBE_SIZE = 600;
 const GRID_SIZE = 50;
-const LAYER_COLORS = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6'];
+
+// Random color generation
+const generateColor = () => {
+  const hue = Math.floor(Math.random() * 360);
+  const saturation = Math.floor(Math.random() * 30 + 60);
+  const lightness = Math.floor(Math.random() * 20 + 45);
+  return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+};
+
+const COLOR_POOL_SIZE = 10;
+const usedColors = new Set();
+
+const getNextColor = () => {
+  let newColor;
+  do {
+    newColor = generateColor();
+  } while (usedColors.has(newColor));
+  
+  usedColors.add(newColor);
+  if (usedColors.size > COLOR_POOL_SIZE) {
+    const [firstColor] = usedColors;
+    usedColors.delete(firstColor);
+  }
+  
+  return newColor;
+};
 
 // Audio context moved outside component
 const audioContext = new AudioContext();
@@ -108,26 +133,23 @@ const Cube = forwardRef(({ onBlockClick }, ref) => {
   const [breakSound] = useState(createBreakSound);
   const rotationSensitivity = 0.2;
 
+  // Initialize with random colors
   const [layers, setLayers] = useState([
-    createLayer(LAYER_COLORS[0]),  // top layer
-    createLayer(LAYER_COLORS[1]),  // layer beneath
+    createLayer(getNextColor()),
+    createLayer(getNextColor()),
   ]);
-
-  const [nextColorIndex, setNextColorIndex] = useState(2);
 
   useEffect(() => {
     const currentLayer = layers[0];
     if (isLayerComplete(currentLayer)) {
       requestAnimationFrame(() => {
         setLayers(prevLayers => {
-          const [_, bottomLayer] = prevLayers; // Keep current bottom layer
-          const newColor = LAYER_COLORS[nextColorIndex % LAYER_COLORS.length];
-          return [bottomLayer, createLayer(newColor)]; // Bottom becomes top, add new bottom
+          const [_, bottomLayer] = prevLayers;
+          return [bottomLayer, createLayer(getNextColor())];
         });
-        setNextColorIndex(prev => prev + 1);
       });
     }
-  }, [layers, nextColorIndex]);
+  }, [layers]);
 
   const handleClick = useCallback((face, row, col) => {
     setLayers(prevLayers => {
