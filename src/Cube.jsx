@@ -2,7 +2,7 @@ import React, { useState, useEffect, useImperativeHandle, forwardRef, useMemo, u
 import './Cube.css';
 
 const CUBE_SIZE = 600;
-const GRID_SIZE = 50;
+const GRID_SIZE = 2;
 
 // Random color generation
 const generateColor = () => {
@@ -70,7 +70,6 @@ const isLayerComplete = (layer) => {
 
 // Optimized Face component with React.memo
 const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize }) => {
-  // Pre-calculate visible blocks
   const blocks = useMemo(() => {
     const visibleBlocks = [];
     
@@ -95,7 +94,8 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
           visibleBlocks.push(
             <button
               key={`${i}-${j}`}
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 if (isTopLayer) {
                   handleClick(faceName, i, j);
                 }
@@ -156,6 +156,9 @@ const Cube = forwardRef(({ onBlockClick }, ref) => {
 
   const handleClick = useCallback((face, row, col) => {
     setLayers(prevLayers => {
+      // Skip if block is already broken
+      if (!prevLayers[0][face][row][col]) return prevLayers;
+      
       const newLayers = [...prevLayers];
       const currentLayer = { ...newLayers[0] };
       const newFace = [...currentLayer[face]];
@@ -163,16 +166,13 @@ const Cube = forwardRef(({ onBlockClick }, ref) => {
       newFace[row][col] = false;
       currentLayer[face] = newFace;
       newLayers[0] = currentLayer;
+
+      // Play sound immediately
+      breakSound?.play();
+      onBlockClick?.();
+
       return newLayers;
     });
-
-    if (breakSound) {
-      breakSound.play();
-    }
-
-    if (onBlockClick) {
-      onBlockClick();
-    }
   }, [breakSound, onBlockClick]);
 
   const removeRandomBlock = useCallback(() => {
