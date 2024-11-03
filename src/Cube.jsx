@@ -128,10 +128,13 @@ const Cube = forwardRef(({ onBlockClick }, ref) => {
   const [theta, setTheta] = useState(45);
   const [phi, setPhi] = useState(-30);
   const [isDragging, setIsDragging] = useState(false);
+  const [dragStartTime, setDragStartTime] = useState(null);
   const [lastPos, setLastPos] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1500);
   const [breakSound] = useState(createBreakSound);
   const rotationSensitivity = 0.2;
+  const DRAG_THRESHOLD = 5;  // pixels of movement needed to start drag
+  const DRAG_DELAY = 150;    // milliseconds to hold before drag starts
 
   // Initialize with random colors
   const [layers, setLayers] = useState([
@@ -198,29 +201,40 @@ const Cube = forwardRef(({ onBlockClick }, ref) => {
   }), [removeRandomBlock]);
 
   const handleMouseDown = useCallback((e) => {
-    setIsDragging(true);
+    setDragStartTime(Date.now());
     setLastPos({ x: e.clientX, y: e.clientY });
   }, []);
 
   const handleMouseMove = useCallback((e) => {
-    if (!isDragging) return;
+    if (!dragStartTime) return;
 
-    const deltaX = e.clientX - lastPos.x;
-    const deltaY = e.clientY - lastPos.y;
+    // Check if enough time has passed
+    if (Date.now() - dragStartTime < DRAG_DELAY) return;
+
+    // Check if moved enough pixels
+    const deltaX = Math.abs(e.clientX - lastPos.x);
+    const deltaY = Math.abs(e.clientY - lastPos.y);
+    
+    if (!isDragging && (deltaX < DRAG_THRESHOLD && deltaY < DRAG_THRESHOLD)) return;
+
+    if (!isDragging) {
+      setIsDragging(true);
+    }
 
     requestAnimationFrame(() => {
-      setTheta(prevTheta => prevTheta + deltaX * rotationSensitivity);
+      setTheta(prevTheta => prevTheta + (e.clientX - lastPos.x) * rotationSensitivity);
       setPhi(prevPhi => {
-        const newPhi = prevPhi - deltaY * rotationSensitivity;
+        const newPhi = prevPhi - (e.clientY - lastPos.y) * rotationSensitivity;
         return Math.max(-90, Math.min(90, newPhi));
       });
     });
 
     setLastPos({ x: e.clientX, y: e.clientY });
-  }, [isDragging, lastPos, rotationSensitivity]);
+  }, [isDragging, lastPos, rotationSensitivity, dragStartTime]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
+    setDragStartTime(null);
   }, []);
 
   const handleWheel = useCallback((e) => {
@@ -228,7 +242,7 @@ const Cube = forwardRef(({ onBlockClick }, ref) => {
     requestAnimationFrame(() => {
       setZoom(prevZoom => {
         const zoomFactor = Math.exp(e.deltaY * 0.001);
-        return Math.min(Math.max(prevZoom * zoomFactor, 500), 5000);
+        return Math.min(Math.max(prevZoom * zoomFactor, 800), 3000);
       });
     });
   }, []);
