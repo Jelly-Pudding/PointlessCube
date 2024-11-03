@@ -55,8 +55,8 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
         let blockColor = 'transparent';
         let isTopLayer = false;
 
-        // Check all layers
-        for (let layerIndex = 0; layerIndex < layers.length; layerIndex++) {
+        // Only check top two layers
+        for (let layerIndex = 0; layerIndex < 2; layerIndex++) {
           const layer = layers[layerIndex];
           if (layer[faceName][i][j]) {
             blockVisible = true;
@@ -109,22 +109,20 @@ const Cube = forwardRef(({ onBlockClick }, ref) => {
   const rotationSensitivity = 0.2;
 
   const [layers, setLayers] = useState([
-    createLayer(LAYER_COLORS[0]),
-    createLayer(LAYER_COLORS[1]),
-    createLayer(LAYER_COLORS[2]),
+    createLayer(LAYER_COLORS[0]),  // top layer
+    createLayer(LAYER_COLORS[1]),  // layer beneath
   ]);
 
-  const [nextColorIndex, setNextColorIndex] = useState(layers.length);
+  const [nextColorIndex, setNextColorIndex] = useState(2);
 
   useEffect(() => {
     const currentLayer = layers[0];
     if (isLayerComplete(currentLayer)) {
       requestAnimationFrame(() => {
         setLayers(prevLayers => {
-          const newLayers = prevLayers.slice(1);
+          const [_, bottomLayer] = prevLayers; // Keep current bottom layer
           const newColor = LAYER_COLORS[nextColorIndex % LAYER_COLORS.length];
-          newLayers.push(createLayer(newColor));
-          return newLayers;
+          return [bottomLayer, createLayer(newColor)]; // Bottom becomes top, add new bottom
         });
         setNextColorIndex(prev => prev + 1);
       });
