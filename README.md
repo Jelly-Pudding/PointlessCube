@@ -42,9 +42,16 @@ docker-compose up --build -d
 go to http://localhost:8080/. create a realm called myrealm. create a client called my-app...
 
 root url http://localhost:80/ 
-valid redirect uris http://localhost:80/* http://localhost
+valid redirect uris http://localhost:80/*
 web origins http://localhost
 
 In Realm Settings → Login, enable "User registration"
 
 ^ KEYCLOAK_ISSUER=http://keycloak:8080/realms/myrealm
+
+access app at localhost
+
+
+docker-compose up -d
+docker-compose build
+docker-compose down

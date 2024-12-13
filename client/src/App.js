@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Cube from './Cube';
 import Menu from './Menu';
 import Upgrades from './Upgrades';
+import Leaderboard from './Leaderboard';
 import './App.css';
 import { io } from 'socket.io-client';
 import Keycloak from 'keycloak-js';
@@ -32,6 +33,9 @@ function App({ keycloak }) {
 
       newSocket.on('connect', () => {
         console.log('Connected to Socket.io server');
+        if (keycloak.tokenParsed) {
+          newSocket.emit('updateUsername', keycloak.tokenParsed.preferred_username);
+        }
       });
 
       newSocket.on('cubeStateUpdate', (updatedLayers) => {
@@ -122,15 +126,10 @@ function App({ keycloak }) {
         />
       )}
       {showLeaderboard && (
-        <div className="overlay">
-          <div className="overlay-content">
-            <h2>Leaderboard</h2>
-            <button className="close-button" onClick={handleCloseLeaderboard}>
-              X
-            </button>
-            <p>Leaderboard feature coming soon!</p>
-          </div>
-        </div>
+        <Leaderboard
+          socket={socket}
+          onClose={handleCloseLeaderboard}
+        />
       )}
       <Cube
         onBlockClick={handleBlockClick}

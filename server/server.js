@@ -61,6 +61,22 @@ const pool = new Pool({
   port: PGPORT,
 });
 
+// New function to get leaderboard data
+async function getLeaderboard() {
+  const { rows } = await pool.query(
+    'SELECT id, username, points FROM users ORDER BY points DESC LIMIT 10'
+  );
+  return rows;
+}
+
+// New function to update username
+async function updateUsername(userId, username) {
+  await pool.query(
+    'UPDATE users SET username = $1 WHERE id = $2',
+    [username, userId]
+  );
+}
+
 // Run migrations to ensure the users table exists
 (async () => {
   const migration = fs.readFileSync(
@@ -88,7 +104,7 @@ app.use(cors());
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: '*', // Update this in production to your frontend's domain
+    origin: '*',
     methods: ['GET', 'POST'],
   },
 });
@@ -165,17 +181,17 @@ function removeBlock(face, row, col) {
   }
 }
 
-// Function to get user data from the database
+// Updated function to get user data from the database
 async function getUserData(userId) {
   const { rows } = await pool.query(
-    'SELECT id, points, owned_upgrades FROM users WHERE id=$1',
+    'SELECT id, username, points, owned_upgrades FROM users WHERE id=$1',
     [userId]
   );
   if (rows.length > 0) return rows[0];
 
   // If user doesn't exist, create a new record
   await pool.query('INSERT INTO users (id) VALUES ($1)', [userId]);
-  return { id: userId, points: 0, owned_upgrades: [] };
+  return { id: userId, username: null, points: 0, owned_upgrades: [] };
 }
 
 // Function to update user data in the database
@@ -215,13 +231,32 @@ io.on('connection', (socket) => {
     ownedUpgrades: socket.userData.owned_upgrades,
   });
 
+  // New handler for leaderboard requests
+  socket.on('requestLeaderboard', async () => {
+    try {
+      const leaderboard = await getLeaderboard();
+      socket.emit('leaderboardUpdate', leaderboard);
+    } catch (err) {
+      console.error('Error fetching leaderboard:', err);
+    }
+  });
+
+  // New handler for username updates
+  socket.on('updateUsername', async (username) => {
+    try {
+      await updateUsername(socket.userId, username);
+    } catch (err) {
+      console.error('Error updating username:', err);
+    }
+  });
+
   // Handle block removal
   socket.on('removeBlock', async ({ face, row, col }) => {
     removeBlock(face, row, col);
     io.emit('cubeStateUpdate', layers);
   });
 
-  // Handle points update
+  // Modified points update handler to include leaderboard update
   socket.on('updatePoints', async ({ points }) => {
     socket.userData.points += points;
     await updateUserData(socket.userId, socket.userData);
@@ -229,6 +264,10 @@ io.on('connection', (socket) => {
       points: socket.userData.points,
       ownedUpgrades: socket.userData.owned_upgrades,
     });
+    
+    // Send updated leaderboard to all clients
+    const leaderboard = await getLeaderboard();
+    io.emit('leaderboardUpdate', leaderboard);
   });
 
   // Handle upgrade purchase
@@ -249,6 +288,10 @@ io.on('connection', (socket) => {
         points: user.points,
         ownedUpgrades: user.owned_upgrades,
       });
+      
+      // Send updated leaderboard after purchase
+      const leaderboard = await getLeaderboard();
+      io.emit('leaderboardUpdate', leaderboard);
     }
   });
 

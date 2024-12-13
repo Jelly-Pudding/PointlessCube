@@ -1,0 +1,28 @@
+.leaderboard-list {
+    margin-top: 20px;
+  }
+  
+  .leaderboard-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    margin: 5px 0;
+    background-color: #444;
+    border-radius: 4px;
+  }
+  
+  .rank {
+    font-weight: bold;
+    min-width: 40px;
+  }
+  
+  .username {
+    flex-grow: 1;
+    margin: 0 10px;
+  }
+  
+  .points {
+    font-weight: bold;
+    color: #3B82F6;
+  }
