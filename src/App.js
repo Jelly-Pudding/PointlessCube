@@ -1,35 +1,32 @@
 // src/App.js
-
 import React, { useState, useEffect, useRef } from 'react';
 import Cube from './Cube';
 import Menu from './Menu';
 import Upgrades from './Upgrades';
 import './App.css';
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:4000'); // Adjust if needed
 
 function App() {
   const [points, setPoints] = useState(0);
   const [ownedUpgrades, setOwnedUpgrades] = useState([]);
   const [showUpgrades, setShowUpgrades] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [layers, setLayers] = useState(null);
 
-  // Ref to access Cube methods
   const cubeRef = useRef();
 
-  // Define available upgrades
   const upgrades = [
     { name: 'Double Points', cost: 50, effect: 'double' },
     { name: 'Auto Clicker', cost: 100, effect: 'autoClicker' },
   ];
 
-  // Handle block click (from manual clicking or autoclicker)
   const handleBlockClick = () => {
     let pointsEarned = 1;
-
-    // Check if 'Double Points' upgrade is owned
     if (ownedUpgrades.includes('double')) {
       pointsEarned *= 2;
     }
-
     setPoints((prevPoints) => prevPoints + pointsEarned);
   };
 
@@ -56,21 +53,38 @@ function App() {
     }
   };
 
-  // Implement auto-clicker effect
+  // For autoclicker, we now need the server to remove blocks.
+  // We'll emit removeBlock events to the server.
   useEffect(() => {
     let interval;
-    if (ownedUpgrades.includes('autoClicker')) {
+    if (ownedUpgrades.includes('autoClicker') && layers) {
       interval = setInterval(() => {
-        // Remove a random block from the cube
+        // Remove a random block via the server
         if (cubeRef.current) {
-          cubeRef.current.removeRandomBlock();
+          cubeRef.current.requestRandomBlockRemoval();
         }
-      }, 1000); // Adjust the interval as needed (e.g., every second)
+      }, 1000);
     }
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [ownedUpgrades]);
+  }, [ownedUpgrades, layers]);
+
+  // Socket.io setup
+  useEffect(() => {
+    socket.on('cubeStateUpdate', (updatedLayers) => {
+      setLayers(updatedLayers);
+    });
+
+    return () => {
+      socket.off('cubeStateUpdate');
+    };
+  }, []);
+
+  // If layers is null, we haven't received the state from the server yet
+  if (!layers) {
+    return <div className="App">Loading cube...</div>;
+  }
 
   return (
     <div className="App">
@@ -88,7 +102,6 @@ function App() {
           onClose={handleCloseUpgrades}
         />
       )}
-      {/* Leaderboard placeholder */}
       {showLeaderboard && (
         <div className="overlay">
           <div className="overlay-content">
@@ -100,7 +113,12 @@ function App() {
           </div>
         </div>
       )}
-      <Cube onBlockClick={handleBlockClick} ref={cubeRef} />
+      <Cube
+        onBlockClick={handleBlockClick}
+        ref={cubeRef}
+        layers={layers}
+        socket={socket}
+      />
     </div>
   );
 }

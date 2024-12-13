@@ -1,36 +1,13 @@
+// src/Cube.jsx
 import React, { useState, useEffect, useImperativeHandle, forwardRef, useMemo, useCallback } from 'react';
 import './Cube.css';
 
 const CUBE_SIZE = 600;
 const GRID_SIZE = 50;
 
-// Random color generation
-const generateColor = () => {
-  const hue = Math.floor(Math.random() * 360);
-  const saturation = Math.floor(Math.random() * 30 + 60);
-  const lightness = Math.floor(Math.random() * 20 + 45);
-  return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
-};
+// We no longer generate colors here, nor manage layers here. That's on the server.
 
-const COLOR_POOL_SIZE = 10;
-const usedColors = new Set();
-
-const getNextColor = () => {
-  let newColor;
-  do {
-    newColor = generateColor();
-  } while (usedColors.has(newColor));
-  
-  usedColors.add(newColor);
-  if (usedColors.size > COLOR_POOL_SIZE) {
-    const [firstColor] = usedColors;
-    usedColors.delete(firstColor);
-  }
-  
-  return newColor;
-};
-
-// Reuse audio nodes
+// The sound remains local:
 const audioContext = new AudioContext();
 const gainNode = audioContext.createGain();
 gainNode.connect(audioContext.destination);
@@ -47,38 +24,16 @@ const playBreakSound = () => {
   oscillator.stop(audioContext.currentTime + 0.1);
 };
 
-const createFace = () =>
-  Array(GRID_SIZE).fill().map(() => new Array(GRID_SIZE).fill(true));
-
-const createLayer = (color) => ({
-  front: createFace(),
-  back: createFace(),
-  top: createFace(),
-  bottom: createFace(),
-  left: createFace(),
-  right: createFace(),
-  color: color,
-});
-
-const isLayerComplete = (layer) => {
-  const faceNames = ['front', 'back', 'top', 'bottom', 'left', 'right'];
-  return faceNames.every((faceName) =>
-    layer[faceName].every((row) => row.every((block) => !block))
-  );
-};
-
-// Optimized Face component with React.memo
 const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize }) => {
   const blocks = useMemo(() => {
     const visibleBlocks = [];
-    
+    // We receive layers as [topLayer, secondLayer], from the server.
     for (let i = 0; i < gridSize; i++) {
       for (let j = 0; j < gridSize; j++) {
         let blockVisible = false;
         let blockColor = 'transparent';
         let isTopLayer = false;
 
-        // Only check top two layers
         for (let layerIndex = 0; layerIndex < 2; layerIndex++) {
           const layer = layers[layerIndex];
           if (layer[faceName][i][j]) {
@@ -106,7 +61,7 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
                 gridRow: i + 1,
                 gridColumn: j + 1,
                 cursor: isTopLayer ? 'pointer' : 'default',
-                touchAction: 'none'  // Prevent touch scrolling from interfering
+                touchAction: 'none'
               }}
             />
           );
@@ -124,12 +79,11 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
     </div>
   );
 }, (prevProps, nextProps) => 
-  prevProps.transform === nextProps.transform && 
-  prevProps.layers[0] === nextProps.layers[0] &&
-  prevProps.layers[1] === nextProps.layers[1]
+  prevProps.transform === nextProps.transform &&
+  prevProps.layers === nextProps.layers
 );
 
-const Cube = forwardRef(({ onBlockClick }, ref) => {
+const Cube = forwardRef(({ onBlockClick, layers, socket }, ref) => {
   const [theta, setTheta] = useState(45);
   const [phi, setPhi] = useState(-30);
   const [isDragging, setIsDragging] = useState(false);
@@ -140,68 +94,13 @@ const Cube = forwardRef(({ onBlockClick }, ref) => {
   const DRAG_THRESHOLD = 5;
   const DRAG_DELAY = 150;
 
-  const [layers, setLayers] = useState([
-    createLayer(getNextColor()),
-    createLayer(getNextColor()),
-  ]);
-
-  useEffect(() => {
-    const currentLayer = layers[0];
-    if (isLayerComplete(currentLayer)) {
-      requestAnimationFrame(() => {
-        setLayers(prevLayers => {
-          const [_, bottomLayer] = prevLayers;
-          return [bottomLayer, createLayer(getNextColor())];
-        });
-      });
-    }
-  }, [layers]);
-
-  const handleClick = useCallback((face, row, col) => {
-    requestAnimationFrame(() => {
-      setLayers(prevLayers => {
-        if (!prevLayers[0][face][row][col]) return prevLayers;
-        
-        const newLayers = [...prevLayers];
-        const currentLayer = { ...newLayers[0] };
-        const newFace = [...currentLayer[face]];
-        newFace[row] = [...newFace[row]];
-        newFace[row][col] = false;
-        currentLayer[face] = newFace;
-        newLayers[0] = currentLayer;
-
-        playBreakSound();
-        onBlockClick?.();
-
-        return newLayers;
-      });
-    });
-  }, [onBlockClick]);
-
-  const removeRandomBlock = useCallback(() => {
-    const faceNames = ['front', 'back', 'top', 'bottom', 'left', 'right'];
-    const visibleBlocks = [];
-
-    faceNames.forEach((face) => {
-      layers[0][face].forEach((row, rowIndex) => {
-        row.forEach((block, colIndex) => {
-          if (block) {
-            visibleBlocks.push({ face, row: rowIndex, col: colIndex });
-          }
-        });
-      });
-    });
-
-    if (visibleBlocks.length > 0) {
-      const randomIndex = Math.floor(Math.random() * visibleBlocks.length);
-      const { face, row, col } = visibleBlocks[randomIndex];
-      handleClick(face, row, col);
-    }
-  }, [layers, handleClick]);
-
-  useImperativeHandle(ref, () => ({
-    removeRandomBlock
-  }), [removeRandomBlock]);
+  const handleBlockRemove = useCallback((face, row, col) => {
+    // Play local sound
+    playBreakSound();
+    onBlockClick?.();
+    // Notify server
+    socket.emit('removeBlock', { face, row, col });
+  }, [socket, onBlockClick]);
 
   const handleMouseDown = useCallback((e) => {
     setDragStartTime(Date.now());
@@ -210,7 +109,6 @@ const Cube = forwardRef(({ onBlockClick }, ref) => {
 
   const handleMouseMove = useCallback((e) => {
     if (!dragStartTime) return;
-
     if (Date.now() - dragStartTime < DRAG_DELAY) return;
 
     const deltaX = Math.abs(e.clientX - lastPos.x);
@@ -254,6 +152,30 @@ const Cube = forwardRef(({ onBlockClick }, ref) => {
     rotateY(${theta}deg)
   `, [phi, theta]);
 
+  useImperativeHandle(ref, () => ({
+    requestRandomBlockRemoval() {
+      if (!layers) return;
+      const faceNames = ['front', 'back', 'top', 'bottom', 'left', 'right'];
+      const visibleBlocks = [];
+
+      faceNames.forEach((face) => {
+        layers[0][face].forEach((row, rowIndex) => {
+          row.forEach((block, colIndex) => {
+            if (block) {
+              visibleBlocks.push({ face, row: rowIndex, col: colIndex });
+            }
+          });
+        });
+      });
+
+      if (visibleBlocks.length > 0) {
+        const randomIndex = Math.floor(Math.random() * visibleBlocks.length);
+        const { face, row, col } = visibleBlocks[randomIndex];
+        handleBlockRemove(face, row, col);
+      }
+    }
+  }), [layers, handleBlockRemove]);
+
   return (
     <div
       className="cube-container"
@@ -280,42 +202,42 @@ const Cube = forwardRef(({ onBlockClick }, ref) => {
           <Face
             layers={layers}
             faceName="front"
-            handleClick={handleClick}
+            handleClick={handleBlockRemove}
             transform={`translateZ(${CUBE_SIZE / 2}px)`}
             gridSize={GRID_SIZE}
           />
           <Face
             layers={layers}
             faceName="back"
-            handleClick={handleClick}
+            handleClick={handleBlockRemove}
             transform={`translateZ(${-CUBE_SIZE / 2}px) rotateY(180deg)`}
             gridSize={GRID_SIZE}
           />
           <Face
             layers={layers}
             faceName="top"
-            handleClick={handleClick}
+            handleClick={handleBlockRemove}
             transform={`translateY(${-CUBE_SIZE / 2}px) rotateX(90deg)`}
             gridSize={GRID_SIZE}
           />
           <Face
             layers={layers}
             faceName="bottom"
-            handleClick={handleClick}
+            handleClick={handleBlockRemove}
             transform={`translateY(${CUBE_SIZE / 2}px) rotateX(-90deg)`}
             gridSize={GRID_SIZE}
           />
           <Face
             layers={layers}
             faceName="left"
-            handleClick={handleClick}
+            handleClick={handleBlockRemove}
             transform={`translateX(${-CUBE_SIZE / 2}px) rotateY(-90deg)`}
             gridSize={GRID_SIZE}
           />
           <Face
             layers={layers}
             faceName="right"
-            handleClick={handleClick}
+            handleClick={handleBlockRemove}
             transform={`translateX(${CUBE_SIZE / 2}px) rotateY(90deg)`}
             gridSize={GRID_SIZE}
           />
