@@ -6,28 +6,54 @@ import Upgrades from './Upgrades';
 import './App.css';
 import { io } from 'socket.io-client';
 
-const socket = io('http://localhost:4000'); // Adjust if needed
-
-function App() {
+function App({ keycloak }) {
   const [points, setPoints] = useState(0);
   const [ownedUpgrades, setOwnedUpgrades] = useState([]);
   const [showUpgrades, setShowUpgrades] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [layers, setLayers] = useState(null);
-
   const cubeRef = useRef();
+  const [socket, setSocket] = useState(null);
 
   const upgrades = [
     { name: 'Double Points', cost: 50, effect: 'double' },
     { name: 'Auto Clicker', cost: 100, effect: 'autoClicker' },
   ];
 
+  useEffect(() => {
+    if (keycloak && keycloak.authenticated) {
+      // Establish socket connection with token
+      const newSocket = io('http://localhost:4000', {
+        auth: { token: keycloak.token }
+      });
+
+      newSocket.on('cubeStateUpdate', (updatedLayers) => {
+        setLayers(updatedLayers);
+      });
+
+      newSocket.on('userData', (userData) => {
+        // userData = { points: number, ownedUpgrades: [] }
+        setPoints(userData.points);
+        setOwnedUpgrades(userData.ownedUpgrades);
+      });
+
+      setSocket(newSocket);
+
+      return () => {
+        newSocket.off('cubeStateUpdate');
+        newSocket.off('userData');
+        newSocket.disconnect();
+      };
+    }
+  }, [keycloak]);
+
   const handleBlockClick = () => {
     let pointsEarned = 1;
     if (ownedUpgrades.includes('double')) {
       pointsEarned *= 2;
     }
-    setPoints((prevPoints) => prevPoints + pointsEarned);
+    setPoints(prev => prev + pointsEarned);
+    socket.emit('updatePoints', { points: pointsEarned });
   };
 
   const handleShowLeaderboard = () => {
@@ -50,16 +76,14 @@ function App() {
     if (points >= upgrade.cost && !ownedUpgrades.includes(upgrade.effect)) {
       setPoints((prevPoints) => prevPoints - upgrade.cost);
       setOwnedUpgrades((prevUpgrades) => [...prevUpgrades, upgrade.effect]);
+      socket.emit('purchaseUpgrade', { upgrade: upgrade.effect });
     }
   };
 
-  // For autoclicker, we now need the server to remove blocks.
-  // We'll emit removeBlock events to the server.
   useEffect(() => {
     let interval;
-    if (ownedUpgrades.includes('autoClicker') && layers) {
+    if (ownedUpgrades.includes('autoClicker') && layers && socket) {
       interval = setInterval(() => {
-        // Remove a random block via the server
         if (cubeRef.current) {
           cubeRef.current.requestRandomBlockRemoval();
         }
@@ -68,20 +92,8 @@ function App() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [ownedUpgrades, layers]);
+  }, [ownedUpgrades, layers, socket]);
 
-  // Socket.io setup
-  useEffect(() => {
-    socket.on('cubeStateUpdate', (updatedLayers) => {
-      setLayers(updatedLayers);
-    });
-
-    return () => {
-      socket.off('cubeStateUpdate');
-    };
-  }, []);
-
-  // If layers is null, we haven't received the state from the server yet
   if (!layers) {
     return <div className="App">Loading cube...</div>;
   }
@@ -106,9 +118,7 @@ function App() {
         <div className="overlay">
           <div className="overlay-content">
             <h2>Leaderboard</h2>
-            <button className="close-button" onClick={handleCloseLeaderboard}>
-              X
-            </button>
+            <button className="close-button" onClick={handleCloseLeaderboard}>X</button>
             <p>Leaderboard feature coming soon!</p>
           </div>
         </div>

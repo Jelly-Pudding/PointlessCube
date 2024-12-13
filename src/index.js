@@ -3,15 +3,32 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
+import Keycloak from 'keycloak-js';
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+const keycloak = new Keycloak({
+  url: 'http://localhost:8080',
+  realm: 'myrealm',
+  clientId: 'my-app'
+});
 
-// If you want to start measuring performance in your app, pass a function
-// to log results (for example: reportWebVitals(console.log))
-// or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
+keycloak.init({ onLoad: 'login-required' }).then((authenticated) => {
+  if (!authenticated) {
+    console.log('User not authenticated!');
+  } else {
+    console.log('User authenticated');
+  }
+
+  // Once Keycloak is initialized and the user is authenticated (or attempted),
+  // render the app and pass the Keycloak instance.
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  root.render(
+    <React.StrictMode>
+      <App keycloak={keycloak} />
+    </React.StrictMode>
+  );
+}).catch(e => {
+  console.error('Failed to initialize Keycloak', e);
+});
+
+// For performance:
 reportWebVitals();
