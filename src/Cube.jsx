@@ -3,11 +3,8 @@ import React, { useState, useEffect, useImperativeHandle, forwardRef, useMemo, u
 import './Cube.css';
 
 const CUBE_SIZE = 600;
-const GRID_SIZE = 50;
+const GRID_SIZE = 32;
 
-// We no longer generate colors here, nor manage layers here. That's on the server.
-
-// The sound remains local:
 const audioContext = new AudioContext();
 const gainNode = audioContext.createGain();
 gainNode.connect(audioContext.destination);
@@ -27,7 +24,6 @@ const playBreakSound = () => {
 const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize }) => {
   const blocks = useMemo(() => {
     const visibleBlocks = [];
-    // We receive layers as [topLayer, secondLayer], from the server.
     for (let i = 0; i < gridSize; i++) {
       for (let j = 0; j < gridSize; j++) {
         let blockVisible = false;
@@ -48,10 +44,9 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
           visibleBlocks.push(
             <button
               key={`${i}-${j}`}
-              onClick={(e) => {
+              onPointerDown={(e) => {
                 e.stopPropagation();
                 if (isTopLayer) {
-                  e.preventDefault();
                   handleClick(faceName, i, j);
                 }
               }}
@@ -79,7 +74,7 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
     </div>
   );
 }, (prevProps, nextProps) => 
-  prevProps.transform === nextProps.transform &&
+  prevProps.transform === nextProps.transform && 
   prevProps.layers === nextProps.layers
 );
 
@@ -90,15 +85,14 @@ const Cube = forwardRef(({ onBlockClick, layers, socket }, ref) => {
   const [dragStartTime, setDragStartTime] = useState(null);
   const [lastPos, setLastPos] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1500);
+
   const rotationSensitivity = 0.2;
   const DRAG_THRESHOLD = 5;
   const DRAG_DELAY = 150;
 
   const handleBlockRemove = useCallback((face, row, col) => {
-    // Play local sound
     playBreakSound();
     onBlockClick?.();
-    // Notify server
     socket.emit('removeBlock', { face, row, col });
   }, [socket, onBlockClick]);
 
@@ -146,11 +140,11 @@ const Cube = forwardRef(({ onBlockClick, layers, socket }, ref) => {
     });
   }, []);
 
-  const cubeTransform = useMemo(() => `
+  const cubeTransform = `
     translate(-50%, -50%)
     rotateX(${phi}deg)
     rotateY(${theta}deg)
-  `, [phi, theta]);
+  `;
 
   useImperativeHandle(ref, () => ({
     requestRandomBlockRemoval() {
