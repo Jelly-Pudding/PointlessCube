@@ -1,5 +1,4 @@
 /* Menu.css */
-
 .menu {
   position: absolute;
   top: 10px;
@@ -19,6 +18,18 @@
   cursor: pointer;
   width: 120px;
   text-align: left;
+}
+
+.menu button:hover {
+  background-color: #2563EB;
+}
+
+.menu button:last-child {
+  background-color: #DC2626;
+}
+
+.menu button:last-child:hover {
+  background-color: #B91C1C;
 }
 
 .menu .points-display {

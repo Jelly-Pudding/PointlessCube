@@ -83,6 +83,13 @@ function App({ keycloak }) {
     setShowUpgrades(false);
   };
 
+  const handleSignOut = () => {
+    if (socket) {
+      socket.disconnect();
+    }
+    keycloak.logout();
+  };
+
   const handlePurchaseUpgrade = (upgrade) => {
     if (points >= upgrade.cost && !ownedUpgrades.includes(upgrade.effect)) {
       setPoints((prevPoints) => prevPoints - upgrade.cost);
@@ -115,6 +122,7 @@ function App({ keycloak }) {
         onShowLeaderboard={handleShowLeaderboard}
         onShowUpgrades={handleShowUpgrades}
         points={points}
+        onSignOut={handleSignOut}
       />
       {showUpgrades && (
         <Upgrades
