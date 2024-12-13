@@ -11,7 +11,12 @@ const keycloak = new Keycloak({
   clientId: 'my-app'
 });
 
-keycloak.init({ onLoad: 'login-required' }).then((authenticated) => {
+keycloak.init({ 
+  onLoad: 'login-required',
+  silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
+  checkLoginIframe: false,
+  redirectUri: 'http://localhost:80/'
+}).then((authenticated) => {
   if (!authenticated) {
     console.log('User not authenticated!');
   } else {

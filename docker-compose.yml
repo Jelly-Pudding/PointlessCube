@@ -1,13 +1,15 @@
 services:
-  postgres:
+  keycloak_postgres:
     image: postgres:15
     container_name: keycloak_postgres
     environment:
       POSTGRES_DB: keycloak
       POSTGRES_USER: keycloak
-      POSTGRES_PASSWORD: mysecretpassword
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
     volumes:
       - keycloak-db-data:/var/lib/postgresql/data
+    networks:
+      - backend
     expose:
       - "5432"
     healthcheck:
@@ -27,20 +29,97 @@ services:
         "--proxy=edge"
       ]
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KC_DB: postgres
-      KC_DB_URL_HOST: postgres
+      KC_DB_URL_HOST: keycloak_postgres
       KC_DB_URL_DATABASE: keycloak
       KC_DB_USERNAME: keycloak
-      KC_DB_PASSWORD: mysecretpassword
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
       KC_PROXY: edge
     depends_on:
-      postgres:
+      keycloak_postgres:
         condition: service_healthy
+    networks:
+      - backend
     ports:
       - "8080:8080"
     restart: unless-stopped
 
+  app_postgres:
+    image: postgres:15
+    container_name: app_postgres
+    environment:
+      POSTGRES_DB: myapp
+      POSTGRES_USER: myapp
+      POSTGRES_PASSWORD: ${APP_DB_PASSWORD}
+    volumes:
+      - app-db-data:/var/lib/postgresql/data
+    networks:
+      - backend
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myapp -d myapp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build: ./server
+    container_name: node-app
+    env_file:
+      - ./server/.env
+    environment:
+      NODE_ENV: production
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER}
+      PGHOST: app_postgres
+      PGUSER: myapp
+      PGPASSWORD: ${APP_DB_PASSWORD}
+      PGDATABASE: myapp
+      PGPORT: 5432
+    depends_on:
+      app_postgres:
+        condition: service_healthy
+    networks:
+      - backend
+    expose:
+      - "4000"
+
+  client:
+    build: ./client
+    container_name: react-build
+    command: sh -c "npm run build"
+    volumes:
+      - react-build:/usr/src/app/build
+    depends_on:
+      server:
+        condition: service_started
+    networks:
+      - backend
+
+  nginx:
+    build: ./nginx
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      client:
+        condition: service_completed_successfully
+      server:
+        condition: service_started
+    volumes:
+      - react-build:/usr/share/nginx/html:ro
+      #- ./nginx/certs:/etc/nginx/certs:ro # For SSL certificates
+    networks:
+      - backend
+
 volumes:
   keycloak-db-data:
+  app-db-data:
+  react-build:
+
+networks:
+  backend:
+    driver: bridge

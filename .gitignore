@@ -4,6 +4,9 @@
 /node_modules
 /.pnp
 .pnp.js
+client/node_modules/
+client/build/
+server/node_modules/
 
 # testing
 /coverage
@@ -12,6 +15,10 @@
 /build
 
 # misc
+.env
+docker-compose.env
+server/.env
+nginx/certs/
 .DS_Store
 .env.local
 .env.development.local

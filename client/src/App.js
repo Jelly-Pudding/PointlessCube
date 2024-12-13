@@ -5,6 +5,7 @@ import Menu from './Menu';
 import Upgrades from './Upgrades';
 import './App.css';
 import { io } from 'socket.io-client';
+import Keycloak from 'keycloak-js';
 
 function App({ keycloak }) {
   const [points, setPoints] = useState(0);
@@ -23,8 +24,14 @@ function App({ keycloak }) {
   useEffect(() => {
     if (keycloak && keycloak.authenticated) {
       // Establish socket connection with token
-      const newSocket = io('http://localhost:4000', {
-        auth: { token: keycloak.token }
+      const newSocket = io('/', {
+        path: '/api/socket.io',
+        auth: { token: keycloak.token },
+        transports: ['websocket'],
+      });
+
+      newSocket.on('connect', () => {
+        console.log('Connected to Socket.io server');
       });
 
       newSocket.on('cubeStateUpdate', (updatedLayers) => {
@@ -32,13 +39,13 @@ function App({ keycloak }) {
       });
 
       newSocket.on('userData', (userData) => {
-        // userData = { points: number, ownedUpgrades: [] }
         setPoints(userData.points);
         setOwnedUpgrades(userData.ownedUpgrades);
       });
 
       setSocket(newSocket);
 
+      // Clean up on unmount
       return () => {
         newSocket.off('cubeStateUpdate');
         newSocket.off('userData');
@@ -52,7 +59,7 @@ function App({ keycloak }) {
     if (ownedUpgrades.includes('double')) {
       pointsEarned *= 2;
     }
-    setPoints(prev => prev + pointsEarned);
+    setPoints((prev) => prev + pointsEarned);
     socket.emit('updatePoints', { points: pointsEarned });
   };
 
@@ -118,7 +125,9 @@ function App({ keycloak }) {
         <div className="overlay">
           <div className="overlay-content">
             <h2>Leaderboard</h2>
-            <button className="close-button" onClick={handleCloseLeaderboard}>X</button>
+            <button className="close-button" onClick={handleCloseLeaderboard}>
+              X
+            </button>
             <p>Leaderboard feature coming soon!</p>
           </div>
         </div>
