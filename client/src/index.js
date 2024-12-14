@@ -6,7 +6,7 @@ import reportWebVitals from './reportWebVitals';
 import Keycloak from 'keycloak-js';
 
 const keycloak = new Keycloak({
-  url: 'http://localhost:8080',
+  url: 'https://www.minecraftoffline.net/auth',
   realm: 'myrealm',
   clientId: 'my-app'
 });
@@ -15,7 +15,7 @@ keycloak.init({
   onLoad: 'login-required',
   silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
   checkLoginIframe: false,
-  redirectUri: 'http://localhost:80/'
+  redirectUri: 'https://www.minecraftoffline.net/'
 }).then((authenticated) => {
   if (!authenticated) {
     console.log('User not authenticated!');

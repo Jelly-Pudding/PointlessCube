@@ -25,7 +25,7 @@ services:
       [
         "start",
         "--hostname-strict=false",
-        "--http-relative-path=/",
+        "--http-relative-path=/auth",
         "--proxy=edge"
       ]
     environment:
@@ -37,14 +37,16 @@ services:
       KC_DB_USERNAME: keycloak
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
       KC_PROXY: edge
+      KC_HOSTNAME: www.minecraftoffline.net
+      KC_HOSTNAME_STRICT: false
+      KC_HOSTNAME_STRICT_HTTPS: true
     depends_on:
       keycloak_postgres:
         condition: service_healthy
     networks:
       - backend
-    ports:
-      - "8080:8080"
     restart: unless-stopped
+
 
   app_postgres:
     image: postgres:15
@@ -70,14 +72,6 @@ services:
     container_name: node-app
     env_file:
       - ./server/.env
-    environment:
-      NODE_ENV: production
-      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER}
-      PGHOST: app_postgres
-      PGUSER: myapp
-      PGPASSWORD: ${APP_DB_PASSWORD}
-      PGDATABASE: myapp
-      PGPORT: 5432
     depends_on:
       app_postgres:
         condition: service_healthy
@@ -111,7 +105,7 @@ services:
         condition: service_started
     volumes:
       - react-build:/usr/share/nginx/html:ro
-      #- ./nginx/certs:/etc/nginx/certs:ro # For SSL certificates
+      - ./nginx/certs:/etc/ssl:ro
     networks:
       - backend
 
