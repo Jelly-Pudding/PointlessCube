@@ -3,6 +3,17 @@ Remember "Curiosity: What's Inside the Cube?"? It's like that except more transp
 
 # Set Up
 
+## Cloudflare Set Up
+
+- in DNS, make sure Proxy status is "proxied" and the orange cloud shows.
+- In SSL/TLS, in overview, set it to Full (strict).
+- In SSL/TLS, in Edge Certificates, set Always Use HTTPS to true.
+- In SSL/TLS, in origin certificates, create a certificate. Choose RSA. These certificates should be put in nginx/certs/. (Private key will be minecraftoffline.net.key, and then the other one can just be minecraftoffline.net.crt)
+- Also get origin cert: curl -o nginx/certs/origin-root.pem https://developers.cloudflare.com/ssl/static/origin_ca_rsa_root.pem
+- Create the bundle.crt in nginx/certs as well: cat nginx/certs/minecraftoffline.net.crt nginx/certs/origin-root.pem > nginx/certs/bundle.crt
+
+## Project Set Up
+
 Make sure you have `.env` files set up. One is in the root repository - example:
 ```
 # Keycloak Database
