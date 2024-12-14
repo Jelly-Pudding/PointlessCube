@@ -19,11 +19,11 @@ function App({ keycloak }) {
 
   const upgrades = [
     { name: 'Double Points', cost: 50, effect: 'double' },
-    { name: 'Double Points Pro', cost: 1000, effect: 'doublePro' },
-    { name: 'Double Points MAX', cost: 2000, effect: 'doubleMax' },
+    { name: 'Double Points Pro', cost: 3000, effect: 'doublePro' },
+    { name: 'Double Points MAX', cost: 30000, effect: 'doubleMax' },
     { name: 'Auto Clicker', cost: 100, effect: 'autoClicker' },
-    { name: 'Fast Auto Clicker', cost: 500, effect: 'autoClickerFast' },
-    { name: 'Ultra Auto Clicker', cost: 10000, effect: 'autoClickerUltra' },
+    { name: 'Fast Auto Clicker', cost: 5000, effect: 'autoClickerFast' },
+    { name: 'Ultra Auto Clicker', cost: 50000, effect: 'autoClickerUltra' },
     { name: 'Layer Nuker', cost: 1000000, effect: 'nuker' },
   ];
 

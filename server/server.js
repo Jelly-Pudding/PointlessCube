@@ -308,11 +308,11 @@ io.on('connection', (socket) => {
       const user = socket.userData;
       const costs = {
         double: 50,
-        doublePro: 1000,
-        doubleMax: 2000,
+        doublePro: 3000,
+        doubleMax: 30000,
         autoClicker: 100,
-        autoClickerFast: 500,
-        autoClickerUltra: 10000,
+        autoClickerFast: 5000,
+        autoClickerUltra: 50000,
         nuker: 1000000
       };
       const cost = costs[upgrade] || 0;
