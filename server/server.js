@@ -1,4 +1,4 @@
-// server.js - core functionality focused
+// server.js
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -60,6 +60,27 @@ const pool = new Pool({
   port: PGPORT
 });
 
+// Run migrations to ensure the users table exists
+(async () => {
+  const migration = fs.readFileSync(
+    path.join(__dirname, 'migrations', '001_create_users_table.sql'),
+    'utf-8'
+  );
+  const client = await pool.connect();
+  try {
+    await client.query(migration);
+    console.log('Migration ran successfully.');
+  } catch (err) {
+    console.error('Error running migration:', err);
+    process.exit(1);
+  } finally {
+    client.release();
+  }
+})().catch((err) => {
+  console.error('Unexpected error during migration:', err);
+  process.exit(1);
+});
+
 // Basic database functions
 async function getLeaderboard() {
   const { rows } = await pool.query(
@@ -87,7 +108,7 @@ async function updateUserData(userId, data) {
 }
 
 // Cube logic
-const GRID_SIZE = 4; // Match client size
+const GRID_SIZE = 4;
 
 function createFace() {
   return Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(true));
@@ -184,6 +205,54 @@ io.on('connection', (socket) => {
 
     const leaderboard = await getLeaderboard();
     io.emit('leaderboardUpdate', leaderboard);
+  });
+
+  socket.on('requestLeaderboard', async () => {
+    try {
+      const leaderboard = await getLeaderboard();
+      socket.emit('leaderboardUpdate', leaderboard);
+    } catch (err) {
+      console.error('Error fetching leaderboard:', err);
+    }
+  });
+
+  socket.on('updateUsername', async (username) => {
+    try {
+      await pool.query(
+        'UPDATE users SET username = $1 WHERE id = $2',
+        [username, socket.userId]
+      );
+    } catch (err) {
+      console.error('Error updating username:', err);
+    }
+  });
+
+  socket.on('purchaseUpgrade', async ({ upgrade }) => {
+    try {
+      const user = socket.userData;
+      const costs = {
+        double: 50,
+        autoClicker: 100
+      };
+      const cost = costs[upgrade] || 0;
+
+      if (user.points >= cost && !user.owned_upgrades.includes(upgrade)) {
+        user.points -= cost;
+        user.owned_upgrades.push(upgrade);
+        
+        await updateUserData(socket.userId, user);
+        
+        socket.emit('userData', {
+          points: user.points,
+          ownedUpgrades: user.owned_upgrades
+        });
+
+        const leaderboard = await getLeaderboard();
+        io.emit('leaderboardUpdate', leaderboard);
+      }
+    } catch (err) {
+      console.error('Purchase error:', err);
+    }
   });
 
   socket.on('disconnect', () => {
