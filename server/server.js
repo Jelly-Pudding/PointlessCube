@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -60,24 +59,32 @@ const pool = new Pool({
   port: PGPORT
 });
 
-// Run migrations to ensure the users table exists
+// Run migrations
 (async () => {
-  const migration = fs.readFileSync(
-    path.join(__dirname, 'migrations', '001_create_users_table.sql'),
-    'utf-8'
-  );
-  const client = await pool.connect();
   try {
-    await client.query(migration);
-    console.log('Migration ran successfully.');
+    const migrations = [
+      fs.readFileSync(path.join(__dirname, 'migrations', '001_create_users_table.sql'), 'utf-8'),
+      fs.readFileSync(path.join(__dirname, 'migrations', '002_create_game_state_table.sql'), 'utf-8')
+    ];
+    
+    const client = await pool.connect();
+    try {
+      for (const migration of migrations) {
+        await client.query(migration);
+      }
+      console.log('Migrations ran successfully.');
+      
+      // Load current layer from database
+      currentLayer = await getCurrentLayer();
+    } finally {
+      client.release();
+    }
   } catch (err) {
-    console.error('Error running migration:', err);
+    console.error('Error during initialization:', err);
     process.exit(1);
-  } finally {
-    client.release();
   }
 })().catch((err) => {
-  console.error('Unexpected error during migration:', err);
+  console.error('Unexpected error during initialization:', err);
   process.exit(1);
 });
 
@@ -105,6 +112,20 @@ async function updateUserData(userId, data) {
     'UPDATE users SET points=$1, owned_upgrades=$2 WHERE id=$3',
     [data.points, data.owned_upgrades, userId]
   );
+}
+
+async function getCurrentLayer() {
+  const { rows } = await pool.query(
+    'SELECT current_layer FROM game_state WHERE id=1'
+  );
+  return rows[0]?.current_layer || 1;
+}
+
+async function incrementLayer() {
+  const { rows } = await pool.query(
+    'UPDATE game_state SET current_layer = current_layer + 1 WHERE id=1 RETURNING current_layer'
+  );
+  return rows[0].current_layer;
 }
 
 // Cube logic
@@ -141,6 +162,7 @@ function isLayerComplete(layer) {
 
 // Initial state
 let layers = [createLayer(), createLayer()];
+let currentLayer;
 
 // Server setup
 const app = express();
@@ -177,8 +199,9 @@ io.on('connection', (socket) => {
     points: socket.userData.points,
     ownedUpgrades: socket.userData.owned_upgrades
   });
+  socket.emit('currentLayer', currentLayer);
 
-  socket.on('removeBlock', ({ face, row, col }) => {
+  socket.on('removeBlock', async ({ face, row, col }) => {
     if (layers[0][face][row][col]) {
       // Remove the block
       layers[0][face][row][col] = false;
@@ -187,6 +210,8 @@ io.on('connection', (socket) => {
       if (isLayerComplete(layers[0])) {
         // Move second layer up and create new bottom layer
         layers = [layers[1], createLayer()];
+        currentLayer = await incrementLayer();
+        io.emit('currentLayer', currentLayer);
       }
 
       // Send updated state to all clients
@@ -232,7 +257,8 @@ io.on('connection', (socket) => {
       const user = socket.userData;
       const costs = {
         double: 50,
-        autoClicker: 100
+        autoClicker: 100,
+        autoClickerFast: 500
       };
       const cost = costs[upgrade] || 0;
 

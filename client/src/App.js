@@ -1,4 +1,3 @@
-// src/App.js
 import React, { useState, useEffect, useRef } from 'react';
 import Cube from './Cube';
 import Menu from './Menu';
@@ -6,7 +5,6 @@ import Upgrades from './Upgrades';
 import Leaderboard from './Leaderboard';
 import './App.css';
 import { io } from 'socket.io-client';
-import Keycloak from 'keycloak-js';
 
 function App({ keycloak }) {
   const [points, setPoints] = useState(0);
@@ -14,17 +12,18 @@ function App({ keycloak }) {
   const [showUpgrades, setShowUpgrades] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [layers, setLayers] = useState(null);
+  const [currentLayer, setCurrentLayer] = useState(1);
   const cubeRef = useRef();
   const [socket, setSocket] = useState(null);
 
   const upgrades = [
     { name: 'Double Points', cost: 50, effect: 'double' },
     { name: 'Auto Clicker', cost: 100, effect: 'autoClicker' },
+    { name: 'Fast Auto Clicker', cost: 500, effect: 'autoClickerFast' },
   ];
 
   useEffect(() => {
     if (keycloak && keycloak.authenticated) {
-      // Establish socket connection with token
       const newSocket = io('/', {
         path: '/api/socket.io',
         auth: { token: keycloak.token },
@@ -42,6 +41,10 @@ function App({ keycloak }) {
         setLayers(updatedLayers);
       });
 
+      newSocket.on('currentLayer', (layer) => {
+        setCurrentLayer(layer);
+      });
+
       newSocket.on('userData', (userData) => {
         setPoints(userData.points);
         setOwnedUpgrades(userData.ownedUpgrades);
@@ -49,9 +52,9 @@ function App({ keycloak }) {
 
       setSocket(newSocket);
 
-      // Clean up on unmount
       return () => {
         newSocket.off('cubeStateUpdate');
+        newSocket.off('currentLayer');
         newSocket.off('userData');
         newSocket.disconnect();
       };
@@ -100,12 +103,18 @@ function App({ keycloak }) {
 
   useEffect(() => {
     let interval;
-    if (ownedUpgrades.includes('autoClicker') && layers && socket) {
-      interval = setInterval(() => {
-        if (cubeRef.current) {
-          cubeRef.current.requestRandomBlockRemoval();
-        }
-      }, 1000);
+    if (layers && socket) {
+      let delay = 1000;
+      if (ownedUpgrades.includes('autoClickerFast')) delay = 250;
+      else if (ownedUpgrades.includes('autoClicker')) delay = 1000;
+      
+      if (ownedUpgrades.some(upgrade => upgrade.startsWith('autoClicker'))) {
+        interval = setInterval(() => {
+          if (cubeRef.current) {
+            cubeRef.current.requestRandomBlockRemoval();
+          }
+        }, delay);
+      }
     }
     return () => {
       if (interval) clearInterval(interval);
@@ -122,6 +131,7 @@ function App({ keycloak }) {
         onShowLeaderboard={handleShowLeaderboard}
         onShowUpgrades={handleShowUpgrades}
         points={points}
+        currentLayer={currentLayer}
         onSignOut={handleSignOut}
       />
       {showUpgrades && (
