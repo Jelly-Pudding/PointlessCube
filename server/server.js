@@ -219,6 +219,57 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('nukeLayer', async () => {
+    if (socket.userData.owned_upgrades.includes('nuker')) {
+      // Count blocks for points
+      let blockCount = 0;
+      Object.keys(layers[0]).forEach(face => {
+        if (Array.isArray(layers[0][face])) {
+          layers[0][face].forEach(row => {
+            row.forEach(block => {
+              if (block) blockCount++;
+            });
+          });
+        }
+      });
+      
+      // Calculate points (1 point per block, multiplied by any double point upgrades)
+      let pointsEarned = blockCount;
+      if (socket.userData.owned_upgrades.includes('double')) pointsEarned *= 2;
+      if (socket.userData.owned_upgrades.includes('doublePro')) pointsEarned *= 2;
+      if (socket.userData.owned_upgrades.includes('doubleMax')) pointsEarned *= 2;
+      
+      // Add points
+      socket.userData.points += pointsEarned;
+      await updateUserData(socket.userId, socket.userData);
+      
+      // Clear all blocks in the top layer
+      Object.keys(layers[0]).forEach(face => {
+        if (Array.isArray(layers[0][face])) {
+          layers[0][face] = layers[0][face].map(row => 
+            row.map(() => false)
+          );
+        }
+      });
+      
+      // Move second layer up and create new bottom layer
+      layers = [layers[1], createLayer()];
+      currentLayer = await incrementLayer();
+      
+      // Send updated state to all clients
+      io.emit('cubeStateUpdate', layers);
+      io.emit('currentLayer', currentLayer);
+      socket.emit('userData', {
+        points: socket.userData.points,
+        ownedUpgrades: socket.userData.owned_upgrades
+      });
+
+      // Update leaderboard
+      const leaderboard = await getLeaderboard();
+      io.emit('leaderboardUpdate', leaderboard);
+    }
+  });
+
   socket.on('updatePoints', async ({ points }) => {
     socket.userData.points += points;
     await updateUserData(socket.userId, socket.userData);
@@ -257,8 +308,12 @@ io.on('connection', (socket) => {
       const user = socket.userData;
       const costs = {
         double: 50,
+        doublePro: 1000,
+        doubleMax: 2000,
         autoClicker: 100,
-        autoClickerFast: 500
+        autoClickerFast: 500,
+        autoClickerUltra: 10000,
+        nuker: 1000000
       };
       const cost = costs[upgrade] || 0;
 

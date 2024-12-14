@@ -13,13 +13,18 @@ function App({ keycloak }) {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [layers, setLayers] = useState(null);
   const [currentLayer, setCurrentLayer] = useState(1);
+  const [nukerCooldown, setNukerCooldown] = useState(false);
   const cubeRef = useRef();
   const [socket, setSocket] = useState(null);
 
   const upgrades = [
     { name: 'Double Points', cost: 50, effect: 'double' },
+    { name: 'Double Points Pro', cost: 1000, effect: 'doublePro' },
+    { name: 'Double Points MAX', cost: 2000, effect: 'doubleMax' },
     { name: 'Auto Clicker', cost: 100, effect: 'autoClicker' },
     { name: 'Fast Auto Clicker', cost: 500, effect: 'autoClickerFast' },
+    { name: 'Ultra Auto Clicker', cost: 10000, effect: 'autoClickerUltra' },
+    { name: 'Layer Nuker', cost: 1000000, effect: 'nuker' },
   ];
 
   useEffect(() => {
@@ -63,11 +68,19 @@ function App({ keycloak }) {
 
   const handleBlockClick = () => {
     let pointsEarned = 1;
-    if (ownedUpgrades.includes('double')) {
-      pointsEarned *= 2;
-    }
+    if (ownedUpgrades.includes('double')) pointsEarned *= 2;
+    if (ownedUpgrades.includes('doublePro')) pointsEarned *= 2;
+    if (ownedUpgrades.includes('doubleMax')) pointsEarned *= 2;
     setPoints((prev) => prev + pointsEarned);
     socket.emit('updatePoints', { points: pointsEarned });
+  };
+
+  const handleNuker = () => {
+    if (ownedUpgrades.includes('nuker') && !nukerCooldown) {
+      socket.emit('nukeLayer');
+      setNukerCooldown(true);
+      setTimeout(() => setNukerCooldown(false), 1800000); // 30 minutes
+    }
   };
 
   const handleShowLeaderboard = () => {
@@ -105,7 +118,8 @@ function App({ keycloak }) {
     let interval;
     if (layers && socket) {
       let delay = 1000;
-      if (ownedUpgrades.includes('autoClickerFast')) delay = 250;
+      if (ownedUpgrades.includes('autoClickerUltra')) delay = 100;
+      else if (ownedUpgrades.includes('autoClickerFast')) delay = 250;
       else if (ownedUpgrades.includes('autoClicker')) delay = 1000;
       
       if (ownedUpgrades.some(upgrade => upgrade.startsWith('autoClicker'))) {
@@ -141,6 +155,8 @@ function App({ keycloak }) {
           ownedUpgrades={ownedUpgrades}
           onPurchase={handlePurchaseUpgrade}
           onClose={handleCloseUpgrades}
+          nukerCooldown={nukerCooldown}
+          onNuker={handleNuker}
         />
       )}
       {showLeaderboard && (
