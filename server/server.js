@@ -1,4 +1,4 @@
-// server.js
+// server.js - core functionality focused
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -18,12 +18,11 @@ const {
   PGPORT,
 } = process.env;
 
-// Initialize JWKS client for token verification
+// Initialize JWKS client
 const client = jwksClient({
-  jwksUri: `${KEYCLOAK_ISSUER}/protocol/openid-connect/certs`,
+  jwksUri: `${KEYCLOAK_ISSUER}/protocol/openid-connect/certs`
 });
 
-// Function to retrieve signing key
 function getKey(header, callback) {
   client.getSigningKey(header.kid, (err, key) => {
     if (err) return callback(err);
@@ -39,8 +38,8 @@ function verifyToken(token) {
       getKey,
       {
         issuer: [
-          KEYCLOAK_ISSUER,  // http://keycloak:8080/realms/myrealm
-          KEYCLOAK_ISSUER.replace('keycloak', 'localhost') // http://localhost:8080/realms/myrealm
+          KEYCLOAK_ISSUER,
+          KEYCLOAK_ISSUER.replace('keycloak', 'localhost')
         ],
         algorithms: ['RS256'],
       },
@@ -52,16 +51,16 @@ function verifyToken(token) {
   });
 }
 
-// Initialize PostgreSQL pool
+// Database setup
 const pool = new Pool({
   host: PGHOST,
   user: PGUSER,
   password: PGPASSWORD,
   database: PGDATABASE,
-  port: PGPORT,
+  port: PGPORT
 });
 
-// New function to get leaderboard data
+// Basic database functions
 async function getLeaderboard() {
   const { rows } = await pool.query(
     'SELECT id, username, points FROM users ORDER BY points DESC LIMIT 10'
@@ -69,53 +68,29 @@ async function getLeaderboard() {
   return rows;
 }
 
-// New function to update username
-async function updateUsername(userId, username) {
+async function getUserData(userId) {
+  const { rows } = await pool.query(
+    'SELECT id, username, points, owned_upgrades FROM users WHERE id=$1',
+    [userId]
+  );
+  if (rows.length > 0) return rows[0];
+
+  await pool.query('INSERT INTO users (id) VALUES ($1)', [userId]);
+  return { id: userId, username: null, points: 0, owned_upgrades: [] };
+}
+
+async function updateUserData(userId, data) {
   await pool.query(
-    'UPDATE users SET username = $1 WHERE id = $2',
-    [username, userId]
+    'UPDATE users SET points=$1, owned_upgrades=$2 WHERE id=$3',
+    [data.points, data.owned_upgrades, userId]
   );
 }
 
-// Run migrations to ensure the users table exists
-(async () => {
-  const migration = fs.readFileSync(
-    path.join(__dirname, 'migrations', '001_create_users_table.sql'),
-    'utf-8'
-  );
-  const client = await pool.connect();
-  try {
-    await client.query(migration);
-    console.log('Migration ran successfully.');
-  } catch (err) {
-    console.error('Error running migration:', err);
-    process.exit(1);
-  } finally {
-    client.release();
-  }
-})().catch((err) => {
-  console.error('Unexpected error during migration:', err);
-  process.exit(1);
-});
-
-const app = express();
-app.use(cors());
-
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST'],
-  },
-});
-
-// Cube logic (unchanged)
-const GRID_SIZE = 50;
+// Cube logic
+const GRID_SIZE = 4; // Match client size
 
 function createFace() {
-  return Array(GRID_SIZE)
-    .fill()
-    .map(() => new Array(GRID_SIZE).fill(true));
+  return Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(true));
 }
 
 function generateColor() {
@@ -123,23 +98,6 @@ function generateColor() {
   const saturation = Math.floor(Math.random() * 30 + 60);
   const lightness = Math.floor(Math.random() * 20 + 45);
   return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
-}
-
-const COLOR_POOL_SIZE = 10;
-const usedColors = new Set();
-
-function getNextColor() {
-  let newColor;
-  do {
-    newColor = generateColor();
-  } while (usedColors.has(newColor));
-
-  usedColors.add(newColor);
-  if (usedColors.size > COLOR_POOL_SIZE) {
-    const firstColor = usedColors.values().next().value;
-    usedColors.delete(firstColor);
-  }
-  return newColor;
 }
 
 function createLayer(color) {
@@ -150,149 +108,82 @@ function createLayer(color) {
     bottom: createFace(),
     left: createFace(),
     right: createFace(),
-    color: color,
+    color: color || generateColor(),
   };
 }
 
 function isLayerComplete(layer) {
-  const faceNames = [
-    'front',
-    'back',
-    'top',
-    'bottom',
-    'left',
-    'right',
-  ];
-  return faceNames.every((faceName) =>
-    layer[faceName].every((row) => row.every((block) => !block))
+  return ['front', 'back', 'top', 'bottom', 'left', 'right'].every(face =>
+    layer[face].every(row => row.every(block => !block))
   );
 }
 
-// Initial cube state
-let layers = [createLayer(getNextColor()), createLayer(getNextColor())];
+// Initial state
+let layers = [createLayer(), createLayer()];
 
-function removeBlock(face, row, col) {
-  if (layers[0][face][row][col]) {
-    layers[0][face][row][col] = false;
-    if (isLayerComplete(layers[0])) {
-      const [_, bottomLayer] = layers;
-      layers = [bottomLayer, createLayer(getNextColor())];
-    }
+// Server setup
+const app = express();
+app.use(cors());
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST']
   }
-}
+});
 
-// Updated function to get user data from the database
-async function getUserData(userId) {
-  const { rows } = await pool.query(
-    'SELECT id, username, points, owned_upgrades FROM users WHERE id=$1',
-    [userId]
-  );
-  if (rows.length > 0) return rows[0];
-
-  // If user doesn't exist, create a new record
-  await pool.query('INSERT INTO users (id) VALUES ($1)', [userId]);
-  return { id: userId, username: null, points: 0, owned_upgrades: [] };
-}
-
-// Function to update user data in the database
-async function updateUserData(userId, data) {
-  await pool.query(
-    'UPDATE users SET points=$1, owned_upgrades=$2 WHERE id=$3',
-    [data.points, data.owned_upgrades, userId]
-  );
-}
-
-// Middleware to validate JWT tokens and load user data
+// Socket middleware
 io.use(async (socket, next) => {
   const token = socket.handshake.auth?.token;
   if (!token) return next(new Error('Authentication token missing'));
 
   try {
-    console.log('Token payload:', jwt.decode(token));
     const decoded = await verifyToken(token);
-    socket.userId = decoded.sub; // Unique user ID from Keycloak
+    socket.userId = decoded.sub;
     socket.userData = await getUserData(socket.userId);
     next();
   } catch (err) {
-    console.error('Token verification failed:', err);
     next(new Error('Invalid authentication token'));
   }
 });
 
+// Socket events
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.userId}`);
 
-  // Send current cube state
   socket.emit('cubeStateUpdate', layers);
-
-  // Send user-specific data
   socket.emit('userData', {
     points: socket.userData.points,
-    ownedUpgrades: socket.userData.owned_upgrades,
+    ownedUpgrades: socket.userData.owned_upgrades
   });
 
-  // New handler for leaderboard requests
-  socket.on('requestLeaderboard', async () => {
-    try {
-      const leaderboard = await getLeaderboard();
-      socket.emit('leaderboardUpdate', leaderboard);
-    } catch (err) {
-      console.error('Error fetching leaderboard:', err);
+  socket.on('removeBlock', ({ face, row, col }) => {
+    if (layers[0][face][row][col]) {
+      // Remove the block
+      layers[0][face][row][col] = false;
+      
+      // Check if layer is complete
+      if (isLayerComplete(layers[0])) {
+        // Move second layer up and create new bottom layer
+        layers = [layers[1], createLayer()];
+      }
+
+      // Send updated state to all clients
+      io.emit('cubeStateUpdate', layers);
     }
   });
 
-  // New handler for username updates
-  socket.on('updateUsername', async (username) => {
-    try {
-      await updateUsername(socket.userId, username);
-    } catch (err) {
-      console.error('Error updating username:', err);
-    }
-  });
-
-  // Handle block removal
-  socket.on('removeBlock', async ({ face, row, col }) => {
-    removeBlock(face, row, col);
-    io.emit('cubeStateUpdate', layers);
-  });
-
-  // Modified points update handler to include leaderboard update
   socket.on('updatePoints', async ({ points }) => {
     socket.userData.points += points;
     await updateUserData(socket.userId, socket.userData);
+    
     socket.emit('userData', {
       points: socket.userData.points,
-      ownedUpgrades: socket.userData.owned_upgrades,
+      ownedUpgrades: socket.userData.owned_upgrades
     });
-    
-    // Send updated leaderboard to all clients
+
     const leaderboard = await getLeaderboard();
     io.emit('leaderboardUpdate', leaderboard);
-  });
-
-  // Handle upgrade purchase
-  socket.on('purchaseUpgrade', async ({ upgrade }) => {
-    const user = socket.userData;
-    let cost = 0;
-    if (upgrade === 'double') cost = 50;
-    if (upgrade === 'autoClicker') cost = 100;
-
-    if (
-      user.points >= cost &&
-      !user.owned_upgrades.includes(upgrade)
-    ) {
-      user.points -= cost;
-      user.owned_upgrades.push(upgrade);
-      await updateUserData(socket.userId, user);
-      socket.emit('userData', {
-        points: user.points,
-        ownedUpgrades: user.owned_upgrades,
-      });
-      
-      // Send updated leaderboard after purchase
-      const leaderboard = await getLeaderboard();
-      io.emit('leaderboardUpdate', leaderboard);
-    }
   });
 
   socket.on('disconnect', () => {

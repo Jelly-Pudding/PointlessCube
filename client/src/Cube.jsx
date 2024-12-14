@@ -3,7 +3,7 @@ import React, { useState, useEffect, useImperativeHandle, forwardRef, useMemo, u
 import './Cube.css';
 
 const CUBE_SIZE = 600;
-const GRID_SIZE = 32;
+const GRID_SIZE = 4;
 
 const audioContext = new AudioContext();
 const gainNode = audioContext.createGain();
@@ -24,39 +24,42 @@ const playBreakSound = () => {
 const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize }) => {
   const blocks = useMemo(() => {
     const visibleBlocks = [];
+    
     for (let i = 0; i < gridSize; i++) {
       for (let j = 0; j < gridSize; j++) {
-        let blockVisible = false;
-        let blockColor = 'transparent';
-        let isTopLayer = false;
-
-        for (let layerIndex = 0; layerIndex < 2; layerIndex++) {
-          const layer = layers[layerIndex];
-          if (layer[faceName][i][j]) {
-            blockVisible = true;
-            blockColor = layer.color;
-            isTopLayer = layerIndex === 0;
-            break;
-          }
-        }
-
-        if (blockVisible) {
+        // Check top layer first
+        if (layers[0][faceName][i][j]) {
           visibleBlocks.push(
             <button
               key={`${i}-${j}`}
               onPointerDown={(e) => {
                 e.stopPropagation();
-                if (isTopLayer) {
-                  handleClick(faceName, i, j);
-                }
+                handleClick(faceName, i, j);
               }}
               className="grid-block"
               style={{
-                backgroundColor: blockColor,
+                backgroundColor: layers[0].color,
                 gridRow: i + 1,
                 gridColumn: j + 1,
-                cursor: isTopLayer ? 'pointer' : 'default',
+                cursor: 'pointer',
                 touchAction: 'none'
+              }}
+            />
+          );
+        }
+        // Only show bottom layer block if there's no top block
+        else if (layers[1][faceName][i][j]) {
+          visibleBlocks.push(
+            <button
+              key={`${i}-${j}`}
+              className="grid-block"
+              style={{
+                backgroundColor: layers[1].color,
+                gridRow: i + 1,
+                gridColumn: j + 1,
+                cursor: 'default',
+                touchAction: 'none',
+                opacity: 0.8
               }}
             />
           );
@@ -73,10 +76,7 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
       </div>
     </div>
   );
-}, (prevProps, nextProps) => 
-  prevProps.transform === nextProps.transform && 
-  prevProps.layers === nextProps.layers
-);
+});
 
 const Cube = forwardRef(({ onBlockClick, layers, socket }, ref) => {
   const [theta, setTheta] = useState(45);
@@ -91,10 +91,12 @@ const Cube = forwardRef(({ onBlockClick, layers, socket }, ref) => {
   const DRAG_DELAY = 150;
 
   const handleBlockRemove = useCallback((face, row, col) => {
-    playBreakSound();
-    onBlockClick?.();
-    socket.emit('removeBlock', { face, row, col });
-  }, [socket, onBlockClick]);
+    if (layers[0][face][row][col]) {
+      playBreakSound();
+      onBlockClick?.();
+      socket.emit('removeBlock', { face, row, col });
+    }
+  }, [layers, socket, onBlockClick]);
 
   const handleMouseDown = useCallback((e) => {
     setDragStartTime(Date.now());
@@ -140,12 +142,6 @@ const Cube = forwardRef(({ onBlockClick, layers, socket }, ref) => {
     });
   }, []);
 
-  const cubeTransform = `
-    translate(-50%, -50%)
-    rotateX(${phi}deg)
-    rotateY(${theta}deg)
-  `;
-
   useImperativeHandle(ref, () => ({
     requestRandomBlockRemoval() {
       if (!layers) return;
@@ -190,7 +186,7 @@ const Cube = forwardRef(({ onBlockClick, layers, socket }, ref) => {
           style={{
             width: CUBE_SIZE,
             height: CUBE_SIZE,
-            transform: cubeTransform,
+            transform: `translate(-50%, -50%) rotateX(${phi}deg) rotateY(${theta}deg)`,
           }}
         >
           <Face
