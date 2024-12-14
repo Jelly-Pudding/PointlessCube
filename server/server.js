@@ -129,7 +129,7 @@ async function incrementLayer() {
 }
 
 // Cube logic
-const GRID_SIZE = 4;
+const GRID_SIZE = 32;
 
 function createFace() {
   return Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(true));

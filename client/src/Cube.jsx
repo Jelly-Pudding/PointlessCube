@@ -3,7 +3,7 @@ import React, { useState, useEffect, useImperativeHandle, forwardRef, useMemo, u
 import './Cube.css';
 
 const CUBE_SIZE = 600;
-const GRID_SIZE = 4;
+const GRID_SIZE = 32;
 
 const audioContext = new AudioContext();
 const gainNode = audioContext.createGain();
