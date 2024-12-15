@@ -1,4 +1,3 @@
-// src/Cube.jsx
 import React, { useState, useEffect, useImperativeHandle, forwardRef, useMemo, useCallback } from 'react';
 import './Cube.css';
 
@@ -9,16 +8,58 @@ const audioContext = new AudioContext();
 const gainNode = audioContext.createGain();
 gainNode.connect(audioContext.destination);
 
+const createParticles = (x, y, color) => {
+  const particleCount = 8;
+  for (let i = 0; i < particleCount; i++) {
+    const particle = document.createElement('div');
+    particle.className = 'particle';
+    document.body.appendChild(particle);
+
+    const size = Math.random() * 4 + 2;
+    particle.style.width = `${size}px`;
+    particle.style.height = `${size}px`;
+    particle.style.background = color;
+    particle.style.opacity = '0.8';
+
+    const angle = (Math.PI * 2 * i) / particleCount;
+    const velocity = 5 + Math.random() * 5;
+    const vx = Math.cos(angle) * velocity;
+    const vy = Math.sin(angle) * velocity;
+
+    let particleX = x;
+    let particleY = y;
+
+    const animate = () => {
+      particleX += vx;
+      particleY += vy;
+      particle.style.transform = `translate(${particleX}px, ${particleY}px)`;
+      particle.style.opacity = parseFloat(particle.style.opacity) - 0.02;
+
+      if (parseFloat(particle.style.opacity) > 0) {
+        requestAnimationFrame(animate);
+      } else {
+        particle.remove();
+      }
+    };
+
+    requestAnimationFrame(animate);
+  }
+};
+
 const playBreakSound = () => {
   const oscillator = audioContext.createOscillator();
+  const gainNode = audioContext.createGain();
+  
   oscillator.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+
   oscillator.type = 'sine';
-  oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
-  gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+  oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
+  gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
   oscillator.start(audioContext.currentTime);
   oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.1);
-  gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-  oscillator.stop(audioContext.currentTime + 0.1);
+  gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
+  oscillator.stop(audioContext.currentTime + 0.15);
 };
 
 const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize }) => {
@@ -27,13 +68,16 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
     
     for (let i = 0; i < gridSize; i++) {
       for (let j = 0; j < gridSize; j++) {
-        // Check top layer first
         if (layers[0][faceName][i][j]) {
           visibleBlocks.push(
             <button
               key={`${i}-${j}`}
               onPointerDown={(e) => {
                 e.stopPropagation();
+                const rect = e.target.getBoundingClientRect();
+                const x = rect.left + rect.width / 2;
+                const y = rect.top + rect.height / 2;
+                createParticles(x, y, layers[0].color);
                 handleClick(faceName, i, j);
               }}
               className="grid-block"
@@ -46,9 +90,7 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
               }}
             />
           );
-        }
-        // Only show bottom layer block if there's no top block
-        else if (layers[1][faceName][i][j]) {
+        } else if (layers[1][faceName][i][j]) {
           visibleBlocks.push(
             <button
               key={`${i}-${j}`}

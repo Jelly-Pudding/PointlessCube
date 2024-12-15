@@ -1,12 +1,10 @@
-/* Cube.css */
-
 .cube-container {
   width: 100%;
-  height: 100vh; /* Full viewport height to center vertically */
+  height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden; /* Hide scrollbars */
+  overflow: hidden;
 }
 
 .cube-wrapper {
@@ -18,8 +16,8 @@
 
 .cube {
   position: absolute;
-  top: 50%; /* Center vertically */
-  left: 50%; /* Center horizontally */
+  top: 50%;
+  left: 50%;
   transform-style: preserve-3d;
   transform-origin: center;
 }
@@ -41,8 +39,8 @@
 .grid-block {
   width: 100%;
   height: 100%;
-  border: 0.5px solid rgba(255, 255, 255, 0.1);  /* Changed from 1px to 0.5px */
-  transition: background-color 0.1s;  /* Changed from 0.2s to 0.1s */
+  border: 0.5px solid rgba(255, 255, 255, 0.1);
+  transition: background-color 0.1s;
   padding: 0;
   margin: 0;
   outline: none;
@@ -55,4 +53,12 @@
 
 .cube-container:active {
   cursor: grabbing;
+}
+
+.particle {
+  position: fixed;
+  pointer-events: none;
+  background: white;
+  border-radius: 50%;
+  z-index: 1000;
 }
