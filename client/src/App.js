@@ -14,6 +14,7 @@ function App({ keycloak }) {
   const [layers, setLayers] = useState(null);
   const [currentLayer, setCurrentLayer] = useState(1);
   const [nukerCooldown, setNukerCooldown] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   const cubeRef = useRef();
   const [socket, setSocket] = useState(null);
 
@@ -106,6 +107,10 @@ function App({ keycloak }) {
     keycloak.logout();
   };
 
+  const handleToggleMute = () => {
+    setIsMuted(prev => !prev);
+  };
+
   const handlePurchaseUpgrade = (upgrade) => {
     if (points >= upgrade.cost && !ownedUpgrades.includes(upgrade.effect)) {
       setPoints((prevPoints) => prevPoints - upgrade.cost);
@@ -147,6 +152,8 @@ function App({ keycloak }) {
         points={points}
         currentLayer={currentLayer}
         onSignOut={handleSignOut}
+        isMuted={isMuted}
+        onToggleMute={handleToggleMute}
       />
       {showUpgrades && (
         <Upgrades
@@ -170,6 +177,7 @@ function App({ keycloak }) {
         ref={cubeRef}
         layers={layers}
         socket={socket}
+        isMuted={isMuted}
       />
     </div>
   );

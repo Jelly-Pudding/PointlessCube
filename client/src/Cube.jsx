@@ -46,7 +46,9 @@ const createParticles = (x, y, color) => {
   }
 };
 
-const playBreakSound = () => {
+const playBreakSound = (isMuted) => {
+  if (isMuted) return;
+  
   const oscillator = audioContext.createOscillator();
   const gainNode = audioContext.createGain();
   
@@ -120,7 +122,7 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
   );
 });
 
-const Cube = forwardRef(({ onBlockClick, layers, socket }, ref) => {
+const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, ref) => {
   const [theta, setTheta] = useState(45);
   const [phi, setPhi] = useState(-30);
   const [isDragging, setIsDragging] = useState(false);
@@ -134,11 +136,11 @@ const Cube = forwardRef(({ onBlockClick, layers, socket }, ref) => {
 
   const handleBlockRemove = useCallback((face, row, col) => {
     if (layers[0][face][row][col]) {
-      playBreakSound();
+      playBreakSound(isMuted);
       onBlockClick?.();
       socket.emit('removeBlock', { face, row, col });
     }
-  }, [layers, socket, onBlockClick]);
+  }, [layers, socket, onBlockClick, isMuted]);
 
   const handleMouseDown = useCallback((e) => {
     setDragStartTime(Date.now());
