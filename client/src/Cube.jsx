@@ -8,40 +8,60 @@ const audioContext = new AudioContext();
 const gainNode = audioContext.createGain();
 gainNode.connect(audioContext.destination);
 
-const createParticles = (x, y, color) => {
-  const particleCount = 8;
+const particleColors = ['#FF3B3B', '#3BFF3B', '#3B3BFF', '#FFEB3B', '#FF3BFF'];
+
+const createParticles = (x, y) => {
+  const particleCount = 8; 
   for (let i = 0; i < particleCount; i++) {
     const particle = document.createElement('div');
     particle.className = 'particle';
     document.body.appendChild(particle);
 
-    const size = Math.random() * 4 + 2;
+    // Smaller, fewer particles
+    const size = Math.random() * 2 + 1; 
     particle.style.width = `${size}px`;
     particle.style.height = `${size}px`;
-    particle.style.background = color;
-    particle.style.opacity = '0.8';
+    particle.style.backgroundColor = particleColors[Math.floor(Math.random() * particleColors.length)];
 
-    const angle = (Math.PI * 2 * i) / particleCount;
-    const velocity = 5 + Math.random() * 5;
-    const vx = Math.cos(angle) * velocity;
-    const vy = Math.sin(angle) * velocity;
+    // Slight random offset
+    let px = x + (Math.random() - 0.5) * 5;
+    let py = y + (Math.random() - 0.5) * 5;
 
-    let particleX = x;
-    let particleY = y;
+    particle.style.left = `${px}px`;
+    particle.style.top = `${py}px`;
+
+    const angle = Math.random() * Math.PI * 2;
+    const velocity = (Math.random() * 1.5) + 0.5; // Less initial speed
+    let vx = Math.cos(angle) * velocity;
+    let vy = Math.sin(angle) * velocity;
+
+    let frame = 0;
+    const maxFrames = 40; // Shorter lifetime (~0.67s)
 
     const animate = () => {
-      particleX += vx;
-      particleY += vy;
-      particle.style.transform = `translate(${particleX}px, ${particleY}px)`;
-      particle.style.opacity = parseFloat(particle.style.opacity) - 0.02;
+      frame++;
+      px += vx;
+      py += vy;
 
-      if (parseFloat(particle.style.opacity) > 0) {
+      particle.style.left = `${px}px`;
+      particle.style.top = `${py}px`;
+
+      // More friction, so they don't go far
+      vx *= 0.85;
+      vy *= 0.85;
+
+      // Fade out near the end
+      if (frame > maxFrames * 0.5) {
+        const fadeRatio = 1 - (frame - maxFrames * 0.5) / (maxFrames * 0.5);
+        particle.style.opacity = fadeRatio;
+      }
+
+      if (frame < maxFrames) {
         requestAnimationFrame(animate);
       } else {
         particle.remove();
       }
     };
-
     requestAnimationFrame(animate);
   }
 };
@@ -50,27 +70,26 @@ const playBreakSound = (isMuted) => {
   if (isMuted) return;
   
   const oscillator = audioContext.createOscillator();
-  const gainNode = audioContext.createGain();
+  const tempGain = audioContext.createGain();
   
-  oscillator.connect(gainNode);
-  gainNode.connect(audioContext.destination);
+  oscillator.connect(tempGain);
+  tempGain.connect(audioContext.destination);
 
   oscillator.type = 'sine';
   oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
-  gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+  tempGain.gain.setValueAtTime(0.2, audioContext.currentTime);
   oscillator.start(audioContext.currentTime);
   oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.1);
-  gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
+  tempGain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
   oscillator.stop(audioContext.currentTime + 0.15);
 };
 
-const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize }) => {
+const Face = React.memo(({ displayLayers, faceName, handleClick, transform, gridSize }) => {
   const blocks = useMemo(() => {
     const visibleBlocks = [];
-    
     for (let i = 0; i < gridSize; i++) {
       for (let j = 0; j < gridSize; j++) {
-        if (layers[0][faceName][i][j]) {
+        if (displayLayers[0][faceName][i][j]) {
           visibleBlocks.push(
             <button
               key={`${i}-${j}`}
@@ -79,12 +98,16 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
                 const rect = e.target.getBoundingClientRect();
                 const x = rect.left + rect.width / 2;
                 const y = rect.top + rect.height / 2;
-                createParticles(x, y, layers[0].color);
+
+                createParticles(x, y);
+
+                // No pop animation now - remove for immediate feedback
+
                 handleClick(faceName, i, j);
               }}
               className="grid-block"
               style={{
-                backgroundColor: layers[0].color,
+                backgroundColor: displayLayers[0].color,
                 gridRow: i + 1,
                 gridColumn: j + 1,
                 cursor: 'pointer',
@@ -92,13 +115,13 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
               }}
             />
           );
-        } else if (layers[1][faceName][i][j]) {
+        } else if (displayLayers[1][faceName][i][j]) {
           visibleBlocks.push(
             <button
               key={`${i}-${j}`}
               className="grid-block"
               style={{
-                backgroundColor: layers[1].color,
+                backgroundColor: displayLayers[1].color,
                 gridRow: i + 1,
                 gridColumn: j + 1,
                 cursor: 'default',
@@ -107,11 +130,14 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
               }}
             />
           );
+        } else {
+          // If no block in top layer and no block in second layer, no button is needed.
+          // This helps ensure an immediate disappearance of the block.
         }
       }
     }
     return visibleBlocks;
-  }, [layers, faceName, handleClick, gridSize]);
+  }, [displayLayers, faceName, handleClick, gridSize]);
 
   return (
     <div className="face" style={{ transform }}>
@@ -123,6 +149,13 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
 });
 
 const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, ref) => {
+  const [displayLayers, setDisplayLayers] = useState(layers);
+
+  useEffect(() => {
+    // Sync displayLayers with server-updated layers whenever layers prop changes
+    setDisplayLayers(layers);
+  }, [layers]);
+
   const [theta, setTheta] = useState(45);
   const [phi, setPhi] = useState(-30);
   const [isDragging, setIsDragging] = useState(false);
@@ -135,12 +168,17 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, ref) => {
   const DRAG_DELAY = 150;
 
   const handleBlockRemove = useCallback((face, row, col) => {
-    if (layers[0][face][row][col]) {
+    if (displayLayers[0][face][row][col]) {
+      // Optimistic update: remove block immediately
+      const newDisplayLayers = JSON.parse(JSON.stringify(displayLayers));
+      newDisplayLayers[0][face][row][col] = false;
+      setDisplayLayers(newDisplayLayers);
+
       playBreakSound(isMuted);
       onBlockClick?.();
       socket.emit('removeBlock', { face, row, col });
     }
-  }, [layers, socket, onBlockClick, isMuted]);
+  }, [displayLayers, isMuted, onBlockClick, socket]);
 
   const handleMouseDown = useCallback((e) => {
     setDragStartTime(Date.now());
@@ -188,12 +226,12 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, ref) => {
 
   useImperativeHandle(ref, () => ({
     requestRandomBlockRemoval() {
-      if (!layers) return;
+      if (!displayLayers) return;
       const faceNames = ['front', 'back', 'top', 'bottom', 'left', 'right'];
       const visibleBlocks = [];
 
       faceNames.forEach((face) => {
-        layers[0][face].forEach((row, rowIndex) => {
+        displayLayers[0][face].forEach((row, rowIndex) => {
           row.forEach((block, colIndex) => {
             if (block) {
               visibleBlocks.push({ face, row: rowIndex, col: colIndex });
@@ -208,7 +246,7 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, ref) => {
         handleBlockRemove(face, row, col);
       }
     }
-  }), [layers, handleBlockRemove]);
+  }), [displayLayers, handleBlockRemove]);
 
   return (
     <div
@@ -234,42 +272,42 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, ref) => {
           }}
         >
           <Face
-            layers={layers}
+            displayLayers={displayLayers}
             faceName="front"
             handleClick={handleBlockRemove}
             transform={`translateZ(${CUBE_SIZE / 2}px)`}
             gridSize={GRID_SIZE}
           />
           <Face
-            layers={layers}
+            displayLayers={displayLayers}
             faceName="back"
             handleClick={handleBlockRemove}
             transform={`translateZ(${-CUBE_SIZE / 2}px) rotateY(180deg)`}
             gridSize={GRID_SIZE}
           />
           <Face
-            layers={layers}
+            displayLayers={displayLayers}
             faceName="top"
             handleClick={handleBlockRemove}
             transform={`translateY(${-CUBE_SIZE / 2}px) rotateX(90deg)`}
             gridSize={GRID_SIZE}
           />
           <Face
-            layers={layers}
+            displayLayers={displayLayers}
             faceName="bottom"
             handleClick={handleBlockRemove}
             transform={`translateY(${CUBE_SIZE / 2}px) rotateX(-90deg)`}
             gridSize={GRID_SIZE}
           />
           <Face
-            layers={layers}
+            displayLayers={displayLayers}
             faceName="left"
             handleClick={handleBlockRemove}
             transform={`translateX(${-CUBE_SIZE / 2}px) rotateY(-90deg)`}
             gridSize={GRID_SIZE}
           />
           <Face
-            layers={layers}
+            displayLayers={displayLayers}
             faceName="right"
             handleClick={handleBlockRemove}
             transform={`translateX(${CUBE_SIZE / 2}px) rotateY(90deg)`}
