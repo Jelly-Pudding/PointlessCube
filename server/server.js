@@ -64,7 +64,8 @@ const pool = new Pool({
   try {
     const migrations = [
       fs.readFileSync(path.join(__dirname, 'migrations', '001_create_users_table.sql'), 'utf-8'),
-      fs.readFileSync(path.join(__dirname, 'migrations', '002_create_game_state_table.sql'), 'utf-8')
+      fs.readFileSync(path.join(__dirname, 'migrations', '002_create_game_state_table.sql'), 'utf-8'),
+      fs.readFileSync(path.join(__dirname, 'migrations', '003_create_cube_state_table.sql'), 'utf-8')
     ];
     
     const client = await pool.connect();
@@ -74,8 +75,15 @@ const pool = new Pool({
       }
       console.log('Migrations ran successfully.');
       
-      // Load current layer from database
-      currentLayer = await getCurrentLayer();
+      // Initialize cube state if empty
+      const { rows } = await client.query('SELECT layers FROM cube_state WHERE id=1');
+      if (!rows[0]?.layers?.length) {
+        const initialLayers = [createLayer(), createLayer()];
+        await client.query(
+          'UPDATE cube_state SET layers=$1 WHERE id=1',
+          [JSON.stringify(initialLayers)]
+        );
+      }
     } finally {
       client.release();
     }
@@ -114,18 +122,21 @@ async function updateUserData(userId, data) {
   );
 }
 
-async function getCurrentLayer() {
+async function getCubeState() {
   const { rows } = await pool.query(
-    'SELECT current_layer FROM game_state WHERE id=1'
+    'SELECT layers, current_layer FROM cube_state WHERE id=1'
   );
-  return rows[0]?.current_layer || 1;
+  return {
+    layers: rows[0].layers,
+    currentLayer: rows[0].current_layer
+  };
 }
 
-async function incrementLayer() {
-  const { rows } = await pool.query(
-    'UPDATE game_state SET current_layer = current_layer + 1 WHERE id=1 RETURNING current_layer'
+async function updateCubeState(layers, currentLayer) {
+  await pool.query(
+    'UPDATE cube_state SET layers=$1, current_layer=$2 WHERE id=1',
+    [JSON.stringify(layers), currentLayer]
   );
-  return rows[0].current_layer;
 }
 
 // Cube logic
@@ -160,10 +171,6 @@ function isLayerComplete(layer) {
   );
 }
 
-// Initial state
-let layers = [createLayer(), createLayer()];
-let currentLayer;
-
 // Server setup
 const app = express();
 app.use(cors());
@@ -191,8 +198,10 @@ io.use(async (socket, next) => {
 });
 
 // Socket events
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
   console.log(`User connected: ${socket.userId}`);
+
+  const { layers, currentLayer } = await getCubeState();
 
   socket.emit('cubeStateUpdate', layers);
   socket.emit('userData', {
@@ -202,30 +211,36 @@ io.on('connection', (socket) => {
   socket.emit('currentLayer', currentLayer);
 
   socket.on('removeBlock', async ({ face, row, col }) => {
-    if (layers[0][face][row][col]) {
+    const { layers: currentLayers, currentLayer: currentLayerNum } = await getCubeState();
+    
+    if (currentLayers[0][face][row][col]) {
       // Remove the block
-      layers[0][face][row][col] = false;
+      currentLayers[0][face][row][col] = false;
       
       // Check if layer is complete
-      if (isLayerComplete(layers[0])) {
+      if (isLayerComplete(currentLayers[0])) {
         // Move second layer up and create new bottom layer
-        layers = [layers[1], createLayer()];
-        currentLayer = await incrementLayer();
-        io.emit('currentLayer', currentLayer);
+        const newLayers = [currentLayers[1], createLayer()];
+        const newLayer = currentLayerNum + 1;
+        await updateCubeState(newLayers, newLayer);
+        io.emit('currentLayer', newLayer);
+        io.emit('cubeStateUpdate', newLayers);
+      } else {
+        await updateCubeState(currentLayers, currentLayerNum);
+        io.emit('cubeStateUpdate', currentLayers);
       }
-
-      // Send updated state to all clients
-      io.emit('cubeStateUpdate', layers);
     }
   });
 
   socket.on('nukeLayer', async () => {
     if (socket.userData.owned_upgrades.includes('nuker')) {
+      const { layers: currentLayers, currentLayer: currentLayerNum } = await getCubeState();
+
       // Count blocks for points
       let blockCount = 0;
-      Object.keys(layers[0]).forEach(face => {
-        if (Array.isArray(layers[0][face])) {
-          layers[0][face].forEach(row => {
+      Object.keys(currentLayers[0]).forEach(face => {
+        if (Array.isArray(currentLayers[0][face])) {
+          currentLayers[0][face].forEach(row => {
             row.forEach(block => {
               if (block) blockCount++;
             });
@@ -233,7 +248,7 @@ io.on('connection', (socket) => {
         }
       });
       
-      // Calculate points (1 point per block, multiplied by any double point upgrades)
+      // Calculate points
       let pointsEarned = blockCount;
       if (socket.userData.owned_upgrades.includes('double')) pointsEarned *= 2;
       if (socket.userData.owned_upgrades.includes('doublePro')) pointsEarned *= 2;
@@ -244,27 +259,28 @@ io.on('connection', (socket) => {
       await updateUserData(socket.userId, socket.userData);
       
       // Clear all blocks in the top layer
-      Object.keys(layers[0]).forEach(face => {
-        if (Array.isArray(layers[0][face])) {
-          layers[0][face] = layers[0][face].map(row => 
+      Object.keys(currentLayers[0]).forEach(face => {
+        if (Array.isArray(currentLayers[0][face])) {
+          currentLayers[0][face] = currentLayers[0][face].map(row => 
             row.map(() => false)
           );
         }
       });
       
       // Move second layer up and create new bottom layer
-      layers = [layers[1], createLayer()];
-      currentLayer = await incrementLayer();
+      const newLayers = [currentLayers[1], createLayer()];
+      const newLayer = currentLayerNum + 1;
+      
+      await updateCubeState(newLayers, newLayer);
       
       // Send updated state to all clients
-      io.emit('cubeStateUpdate', layers);
-      io.emit('currentLayer', currentLayer);
+      io.emit('cubeStateUpdate', newLayers);
+      io.emit('currentLayer', newLayer);
       socket.emit('userData', {
         points: socket.userData.points,
         ownedUpgrades: socket.userData.owned_upgrades
       });
 
-      // Update leaderboard
       const leaderboard = await getLeaderboard();
       io.emit('leaderboardUpdate', leaderboard);
     }
