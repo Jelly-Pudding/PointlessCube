@@ -55,11 +55,11 @@
   cursor: grabbing;
 }
 
-/* Particle styles */
-.particle {
+.block-particle {
   position: absolute;
   pointer-events: none;
-  border-radius: 50%;
   z-index: 99999;
   opacity: 1;
+  transform-origin: center;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.3);
 }
