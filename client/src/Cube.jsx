@@ -4,19 +4,22 @@ import './Cube.css';
 const CUBE_SIZE = 600;
 const GRID_SIZE = 32;
 
+// Updated particle function with slower movement, gentle upward drift, larger size, and slower fade-out.
 const createBlockParticles = (e, blockColor, face, position) => {
   const rect = e.target.getBoundingClientRect();
   const centerX = rect.left + rect.width / 2;
   const centerY = rect.top + rect.height / 2;
-  
-  const particleCount = Math.floor(Math.random() * 3) + 2; // Random between 2 and 4
+
+  // Create between 2 and 4 particles
+  const particleCount = Math.floor(Math.random() * 3) + 2;
   for (let i = 0; i < particleCount; i++) {
     const particle = document.createElement('div');
     particle.className = 'block-particle';
     particle.style.backgroundColor = blockColor;
     document.body.appendChild(particle);
 
-    const size = Math.random() * 6 + 4;
+    // Make particles slightly larger: random size between 6 and 16 pixels
+    const size = Math.random() * 10 + 6;
     particle.style.width = `${size}px`;
     particle.style.height = `${size}px`;
 
@@ -26,30 +29,34 @@ const createBlockParticles = (e, blockColor, face, position) => {
     particle.style.left = `${px}px`;
     particle.style.top = `${py}px`;
 
+    // Slow, random initial direction
     const angle = Math.random() * Math.PI * 2;
-    const velocity = Math.random() * 1 + 0.5;
+    // Lower velocity: random between 0.2 and 0.5 pixels per frame
+    const velocity = Math.random() * 0.3 + 0.2;
     let vx = Math.cos(angle) * velocity;
     let vy = Math.sin(angle) * velocity;
 
     let frame = 0;
-    const maxFrames = 40;
-    const gravity = 0.15;
+    const maxFrames = 180; // Increase lifespan (about 3 seconds at 60fps)
+    const gravity = -0.005; // A small negative value for a gentle upward drift
 
     const animate = () => {
       frame++;
+      // Apply gentle upward acceleration (gravity)
       vy += gravity;
       px += vx;
       py += vy;
 
+      // Gradually shrink the particle over its lifespan
       const sizeRatio = 1 - frame / maxFrames;
       particle.style.width = `${size * sizeRatio}px`;
       particle.style.height = `${size * sizeRatio}px`;
-
       particle.style.left = `${px}px`;
       particle.style.top = `${py}px`;
 
-      if (frame > maxFrames * 0.7) {
-        const fadeRatio = 1 - (frame - maxFrames * 0.7) / (maxFrames * 0.3);
+      // Fade out gradually, starting halfway through the lifespan
+      if (frame > maxFrames * 0.5) {
+        const fadeRatio = 1 - (frame - maxFrames * 0.5) / (maxFrames * 0.5);
         particle.style.opacity = fadeRatio;
       }
 
@@ -116,8 +123,8 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
       </div>
     </div>
   );
-}, (prevProps, nextProps) => 
-  prevProps.transform === nextProps.transform && 
+}, (prevProps, nextProps) =>
+  prevProps.transform === nextProps.transform &&
   prevProps.layers === nextProps.layers
 );
 
@@ -155,10 +162,10 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
     const now = Date.now();
     if (now - lastPlayTime < 30) return;
     setLastPlayTime(now);
-    
+
     const oscillator = audioContext.context.createOscillator();
     const tempGain = audioContext.context.createGain();
-    
+
     oscillator.connect(tempGain);
     tempGain.connect(audioContext.context.destination);
 
@@ -169,7 +176,7 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
     oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.context.currentTime + 0.1);
     tempGain.gain.exponentialRampToValueAtTime(0.01, audioContext.context.currentTime + 0.15);
     oscillator.stop(audioContext.context.currentTime + 0.15);
-    
+
     setTimeout(() => {
       tempGain.disconnect();
       oscillator.disconnect();
@@ -182,7 +189,7 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
     socket.emit('removeBlock', { face, row, col });
   }, [socket, onBlockClick, playBreakSound]);
 
-  // Updated pointer handlers with pointer capture for mouse support
+  // Pointer event handlers with pointer capture for mouse support
   const handlePointerDown = useCallback((e) => {
     e.currentTarget.setPointerCapture(e.pointerId);
     setDragStartTime(Date.now());
@@ -195,7 +202,7 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
 
     const deltaX = Math.abs(e.clientX - lastPos.x);
     const deltaY = Math.abs(e.clientY - lastPos.y);
-    
+
     if (!isDragging && (deltaX < DRAG_THRESHOLD && deltaY < DRAG_THRESHOLD)) return;
 
     if (!isDragging) {
