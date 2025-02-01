@@ -121,7 +121,7 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
   prevProps.layers === nextProps.layers
 );
 
-const Cube = forwardRef(({ onBlockClick, layers, socket }, forwardedRef) => {
+const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef) => {
   const containerRef = useRef(null);
   const [theta, setTheta] = useState(45);
   const [phi, setPhi] = useState(-30);
@@ -146,6 +146,7 @@ const Cube = forwardRef(({ onBlockClick, layers, socket }, forwardedRef) => {
   }, [audioContext]);
 
   const playBreakSound = useCallback(() => {
+    if (isMuted) return; // Do nothing if muted
     if (!audioContext) {
       initAudioContext();
       return;
@@ -173,7 +174,7 @@ const Cube = forwardRef(({ onBlockClick, layers, socket }, forwardedRef) => {
       tempGain.disconnect();
       oscillator.disconnect();
     }, 200);
-  }, [audioContext, initAudioContext, lastPlayTime]);
+  }, [audioContext, initAudioContext, lastPlayTime, isMuted]);
 
   const handleBlockRemove = useCallback((face, row, col) => {
     playBreakSound();
@@ -181,12 +182,14 @@ const Cube = forwardRef(({ onBlockClick, layers, socket }, forwardedRef) => {
     socket.emit('removeBlock', { face, row, col });
   }, [socket, onBlockClick, playBreakSound]);
 
-  const handleMouseDown = useCallback((e) => {
+  // Updated pointer handlers with pointer capture for mouse support
+  const handlePointerDown = useCallback((e) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
     setDragStartTime(Date.now());
     setLastPos({ x: e.clientX, y: e.clientY });
   }, []);
 
-  const handleMouseMove = useCallback((e) => {
+  const handlePointerMove = useCallback((e) => {
     if (!dragStartTime) return;
     if (Date.now() - dragStartTime < DRAG_DELAY) return;
 
@@ -210,7 +213,18 @@ const Cube = forwardRef(({ onBlockClick, layers, socket }, forwardedRef) => {
     setLastPos({ x: e.clientX, y: e.clientY });
   }, [isDragging, lastPos, rotationSensitivity, dragStartTime]);
 
-  const handleMouseUp = useCallback(() => {
+  const handlePointerUp = useCallback((e) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    setIsDragging(false);
+    setDragStartTime(null);
+  }, []);
+
+  const handlePointerCancel = useCallback((e) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
     setIsDragging(false);
     setDragStartTime(null);
   }, []);
@@ -269,10 +283,11 @@ const Cube = forwardRef(({ onBlockClick, layers, socket }, forwardedRef) => {
   return (
     <div
       className="cube-container"
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      style={{ touchAction: 'none' }}
       ref={containerRef}
     >
       <div
