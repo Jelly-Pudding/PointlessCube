@@ -191,7 +191,7 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
 
   // Pointer event handlers
   const handlePointerDown = useCallback((e) => {
-    // Add/update active pointer info
+    // Record pointer position
     pointers.current[e.pointerId] = { x: e.clientX, y: e.clientY };
 
     // For single-pointer drag, record start time and position
@@ -203,12 +203,12 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
   }, []);
 
   const handlePointerMove = useCallback((e) => {
-    // Update current pointer info
+    // Update the pointer's current position
     pointers.current[e.pointerId] = { x: e.clientX, y: e.clientY };
 
-    // If two or more pointers are active, use pinch-zoom
     const activePointers = Object.keys(pointers.current);
     if (activePointers.length >= 2) {
+      // Pinch-zoom branch
       const [id1, id2] = activePointers;
       const p1 = pointers.current[id1];
       const p2 = pointers.current[id2];
@@ -217,7 +217,10 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
         initialPinchDistance.current = currentDistance;
         initialZoom.current = zoom;
       } else {
-        const newZoom = initialZoom.current * (currentDistance / initialPinchDistance.current);
+        // Invert the ratio so that spreading fingers zooms in (i.e. decreases zoom)
+        let newZoom = initialZoom.current * (initialPinchDistance.current / currentDistance);
+        // Clamp the zoom between 800 and 3000
+        newZoom = Math.min(Math.max(newZoom, 800), 3000);
         setZoom(newZoom);
       }
       // Do not perform drag when pinching
@@ -231,7 +234,6 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
     const deltaX = e.clientX - lastPos.x;
     const deltaY = e.clientY - lastPos.y;
 
-    // Update rotation based on pointer movement
     setTheta(prevTheta => prevTheta + deltaX * rotationSensitivity);
     setPhi(prevPhi => {
       const newPhi = prevPhi - deltaY * rotationSensitivity;
@@ -243,17 +245,14 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
   const handlePointerUp = useCallback((e) => {
     // Remove pointer from active list
     delete pointers.current[e.pointerId];
-    // If fewer than two pointers remain, clear pinch zoom tracking
     if (Object.keys(pointers.current).length < 2) {
       initialPinchDistance.current = null;
       initialZoom.current = null;
     }
-    // For drag, release pointer capture and reset drag state if no multi-touch
     if (Object.keys(pointers.current).length === 0) {
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
       }
-      setIsDragging(false);
       setDragStartTime(null);
     }
   }, []);
@@ -267,11 +266,10 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
-    setIsDragging(false);
     setDragStartTime(null);
   }, []);
 
-  // Existing wheel event for desktop zoom (won't fire on phone)
+  // Existing wheel event for desktop zoom
   const handleWheel = useCallback((e) => {
     e.preventDefault();
     const zoomFactor = Math.exp(e.deltaY * 0.001);
