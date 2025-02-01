@@ -4,21 +4,19 @@ import './Cube.css';
 const CUBE_SIZE = 600;
 const GRID_SIZE = 32;
 
-// Updated particle function with slower movement, gentle upward drift, larger size, and slower fade-out.
 const createBlockParticles = (e, blockColor, face, position) => {
   const rect = e.target.getBoundingClientRect();
   const centerX = rect.left + rect.width / 2;
   const centerY = rect.top + rect.height / 2;
 
-  // Create between 2 and 4 particles
-  const particleCount = Math.floor(Math.random() * 3) + 2;
+  const particleCount = Math.floor(Math.random() * 3) + 2; // Random between 2 and 4
   for (let i = 0; i < particleCount; i++) {
     const particle = document.createElement('div');
     particle.className = 'block-particle';
     particle.style.backgroundColor = blockColor;
     document.body.appendChild(particle);
 
-    // Make particles slightly larger: random size between 6 and 16 pixels
+    // Slightly larger particles
     const size = Math.random() * 10 + 6;
     particle.style.width = `${size}px`;
     particle.style.height = `${size}px`;
@@ -31,23 +29,20 @@ const createBlockParticles = (e, blockColor, face, position) => {
 
     // Slow, random initial direction
     const angle = Math.random() * Math.PI * 2;
-    // Lower velocity: random between 0.2 and 0.5 pixels per frame
     const velocity = Math.random() * 0.3 + 0.2;
     let vx = Math.cos(angle) * velocity;
     let vy = Math.sin(angle) * velocity;
 
     let frame = 0;
-    const maxFrames = 180; // Increase lifespan (about 3 seconds at 60fps)
+    const maxFrames = 180; // About 3 seconds at 60 fps
     const gravity = -0.005; // A small negative value for a gentle upward drift
 
     const animate = () => {
       frame++;
-      // Apply gentle upward acceleration (gravity)
       vy += gravity;
       px += vx;
       py += vy;
 
-      // Gradually shrink the particle over its lifespan
       const sizeRatio = 1 - frame / maxFrames;
       particle.style.width = `${size * sizeRatio}px`;
       particle.style.height = `${size * sizeRatio}px`;
@@ -139,6 +134,11 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
   const [audioContext, setAudioContext] = useState(null);
   const [lastPlayTime, setLastPlayTime] = useState(0);
 
+  // For touch pinch zoom
+  const pointers = useRef({}); // Track active pointers by their id
+  const initialPinchDistance = useRef(null);
+  const initialZoom = useRef(null);
+
   const rotationSensitivity = 0.2;
   const DRAG_THRESHOLD = 5;
   const DRAG_DELAY = 150;
@@ -189,46 +189,81 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
     socket.emit('removeBlock', { face, row, col });
   }, [socket, onBlockClick, playBreakSound]);
 
-  // Pointer event handlers with pointer capture for mouse support
+  // Pointer event handlers
   const handlePointerDown = useCallback((e) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setDragStartTime(Date.now());
-    setLastPos({ x: e.clientX, y: e.clientY });
+    // Add/update active pointer info
+    pointers.current[e.pointerId] = { x: e.clientX, y: e.clientY };
+
+    // For single-pointer drag, record start time and position
+    if (Object.keys(pointers.current).length === 1) {
+      e.currentTarget.setPointerCapture(e.pointerId);
+      setDragStartTime(Date.now());
+      setLastPos({ x: e.clientX, y: e.clientY });
+    }
   }, []);
 
   const handlePointerMove = useCallback((e) => {
+    // Update current pointer info
+    pointers.current[e.pointerId] = { x: e.clientX, y: e.clientY };
+
+    // If two or more pointers are active, use pinch-zoom
+    const activePointers = Object.keys(pointers.current);
+    if (activePointers.length >= 2) {
+      const [id1, id2] = activePointers;
+      const p1 = pointers.current[id1];
+      const p2 = pointers.current[id2];
+      const currentDistance = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      if (initialPinchDistance.current === null) {
+        initialPinchDistance.current = currentDistance;
+        initialZoom.current = zoom;
+      } else {
+        const newZoom = initialZoom.current * (currentDistance / initialPinchDistance.current);
+        setZoom(newZoom);
+      }
+      // Do not perform drag when pinching
+      return;
+    }
+
+    // Otherwise, use single pointer for drag
     if (!dragStartTime) return;
     if (Date.now() - dragStartTime < DRAG_DELAY) return;
 
-    const deltaX = Math.abs(e.clientX - lastPos.x);
-    const deltaY = Math.abs(e.clientY - lastPos.y);
+    const deltaX = e.clientX - lastPos.x;
+    const deltaY = e.clientY - lastPos.y;
 
-    if (!isDragging && (deltaX < DRAG_THRESHOLD && deltaY < DRAG_THRESHOLD)) return;
-
-    if (!isDragging) {
-      setIsDragging(true);
-    }
-
-    requestAnimationFrame(() => {
-      setTheta(prevTheta => prevTheta + (e.clientX - lastPos.x) * rotationSensitivity);
-      setPhi(prevPhi => {
-        const newPhi = prevPhi - (e.clientY - lastPos.y) * rotationSensitivity;
-        return Math.max(-90, Math.min(90, newPhi));
-      });
+    // Update rotation based on pointer movement
+    setTheta(prevTheta => prevTheta + deltaX * rotationSensitivity);
+    setPhi(prevPhi => {
+      const newPhi = prevPhi - deltaY * rotationSensitivity;
+      return Math.max(-90, Math.min(90, newPhi));
     });
-
     setLastPos({ x: e.clientX, y: e.clientY });
-  }, [isDragging, lastPos, rotationSensitivity, dragStartTime]);
+  }, [dragStartTime, lastPos, rotationSensitivity, zoom]);
 
   const handlePointerUp = useCallback((e) => {
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
+    // Remove pointer from active list
+    delete pointers.current[e.pointerId];
+    // If fewer than two pointers remain, clear pinch zoom tracking
+    if (Object.keys(pointers.current).length < 2) {
+      initialPinchDistance.current = null;
+      initialZoom.current = null;
     }
-    setIsDragging(false);
-    setDragStartTime(null);
+    // For drag, release pointer capture and reset drag state if no multi-touch
+    if (Object.keys(pointers.current).length === 0) {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+      setIsDragging(false);
+      setDragStartTime(null);
+    }
   }, []);
 
   const handlePointerCancel = useCallback((e) => {
+    delete pointers.current[e.pointerId];
+    if (Object.keys(pointers.current).length < 2) {
+      initialPinchDistance.current = null;
+      initialZoom.current = null;
+    }
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
@@ -236,23 +271,19 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
     setDragStartTime(null);
   }, []);
 
+  // Existing wheel event for desktop zoom (won't fire on phone)
   const handleWheel = useCallback((e) => {
     e.preventDefault();
-    requestAnimationFrame(() => {
-      setZoom(prevZoom => {
-        const zoomFactor = Math.exp(e.deltaY * 0.001);
-        return Math.min(Math.max(prevZoom * zoomFactor, 800), 3000);
-      });
-    });
+    const zoomFactor = Math.exp(e.deltaY * 0.001);
+    setZoom(prev => Math.min(Math.max(prev * zoomFactor, 800), 3000));
   }, []);
 
   useEffect(() => {
     const container = containerRef.current;
     if (container) {
-      const wheelHandler = (e) => handleWheel(e);
-      container.addEventListener('wheel', wheelHandler, { passive: false });
+      container.addEventListener('wheel', handleWheel, { passive: false });
       return () => {
-        container.removeEventListener('wheel', wheelHandler);
+        container.removeEventListener('wheel', handleWheel);
       };
     }
   }, [handleWheel]);
