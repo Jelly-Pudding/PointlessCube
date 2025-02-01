@@ -220,7 +220,7 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
         // Invert the ratio so that spreading fingers zooms in (i.e. decreases zoom)
         let newZoom = initialZoom.current * (initialPinchDistance.current / currentDistance);
         // Clamp the zoom between 800 and 3000
-        newZoom = Math.min(Math.max(newZoom, 800), 3000);
+        newZoom = Math.min(Math.max(newZoom, 700), 3000);
         setZoom(newZoom);
       }
       // Do not perform drag when pinching
