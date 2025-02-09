@@ -59,7 +59,49 @@ const pool = new Pool({
   port: PGPORT
 });
 
-// Run migrations
+// Cube logic – update grid size from 32 to 64
+const GRID_SIZE = 64;
+
+function createFace() {
+  return Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(true));
+}
+
+function generateColor() {
+  const hue = Math.floor(Math.random() * 360);
+  const saturation = Math.floor(Math.random() * 30 + 60);
+  const lightness = Math.floor(Math.random() * 20 + 45);
+  return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+}
+
+function createLayer(color) {
+  return {
+    front: createFace(),
+    back: createFace(),
+    top: createFace(),
+    bottom: createFace(),
+    left: createFace(),
+    right: createFace(),
+    color: color || generateColor(),
+  };
+}
+
+function isLayerComplete(layer) {
+  return ['front', 'back', 'top', 'bottom', 'left', 'right'].every(face =>
+    layer[face].every(row => row.every(block => !block))
+  );
+}
+
+// Helper: Check if a given cube state has the expected grid size.
+function isCubeStateValid(cubeLayers) {
+  return (
+    Array.isArray(cubeLayers) &&
+    cubeLayers.length > 0 &&
+    cubeLayers[0].front &&
+    cubeLayers[0].front.length === GRID_SIZE
+  );
+}
+
+// Run migrations and initialize cube state
 (async () => {
   try {
     const migrations = [
@@ -67,25 +109,35 @@ const pool = new Pool({
       fs.readFileSync(path.join(__dirname, 'migrations', '002_create_game_state_table.sql'), 'utf-8'),
       fs.readFileSync(path.join(__dirname, 'migrations', '003_create_cube_state_table.sql'), 'utf-8')
     ];
-    
-    const client = await pool.connect();
+
+    const clientDB = await pool.connect();
     try {
       for (const migration of migrations) {
-        await client.query(migration);
+        await clientDB.query(migration);
       }
       console.log('Migrations ran successfully.');
-      
-      // Initialize cube state if empty
-      const { rows } = await client.query('SELECT layers FROM cube_state WHERE id=1');
-      if (!rows[0]?.layers?.length) {
+
+      // Initialize cube state if empty or if grid dimensions are outdated
+      const { rows } = await clientDB.query('SELECT layers FROM cube_state WHERE id=1');
+      let layers;
+      try {
+        // Check if rows[0].layers is a string; if so, parse it.
+        layers = typeof rows[0].layers === 'string'
+          ? JSON.parse(rows[0].layers)
+          : rows[0].layers;
+      } catch (e) {
+        layers = null;
+      }
+      if (!layers || !isCubeStateValid(layers)) {
         const initialLayers = [createLayer(), createLayer()];
-        await client.query(
+        await clientDB.query(
           'UPDATE cube_state SET layers=$1 WHERE id=1',
           [JSON.stringify(initialLayers)]
         );
+        console.log('Cube state reinitialized with grid size:', GRID_SIZE);
       }
     } finally {
-      client.release();
+      clientDB.release();
     }
   } catch (err) {
     console.error('Error during initialization:', err);
@@ -126,8 +178,21 @@ async function getCubeState() {
   const { rows } = await pool.query(
     'SELECT layers, current_layer FROM cube_state WHERE id=1'
   );
+  // rows[0].layers might already be an object (because of JSONB)
+  let layersData = rows[0].layers;
+  let cubeLayers;
+  if (typeof layersData === 'string') {
+    cubeLayers = JSON.parse(layersData);
+  } else {
+    cubeLayers = layersData;
+  }
+  // If stored cube layers are not of the expected grid size, reinitialize them.
+  if (!isCubeStateValid(cubeLayers)) {
+    cubeLayers = [createLayer(), createLayer()];
+    await updateCubeState(cubeLayers, rows[0].current_layer);
+  }
   return {
-    layers: rows[0].layers,
+    layers: cubeLayers,
     currentLayer: rows[0].current_layer
   };
 }
@@ -136,38 +201,6 @@ async function updateCubeState(layers, currentLayer) {
   await pool.query(
     'UPDATE cube_state SET layers=$1, current_layer=$2 WHERE id=1',
     [JSON.stringify(layers), currentLayer]
-  );
-}
-
-// Cube logic
-const GRID_SIZE = 32;
-
-function createFace() {
-  return Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(true));
-}
-
-function generateColor() {
-  const hue = Math.floor(Math.random() * 360);
-  const saturation = Math.floor(Math.random() * 30 + 60);
-  const lightness = Math.floor(Math.random() * 20 + 45);
-  return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
-}
-
-function createLayer(color) {
-  return {
-    front: createFace(),
-    back: createFace(),
-    top: createFace(),
-    bottom: createFace(),
-    left: createFace(),
-    right: createFace(),
-    color: color || generateColor(),
-  };
-}
-
-function isLayerComplete(layer) {
-  return ['front', 'back', 'top', 'bottom', 'left', 'right'].every(face =>
-    layer[face].every(row => row.every(block => !block))
   );
 }
 
@@ -212,11 +245,11 @@ io.on('connection', async (socket) => {
 
   socket.on('removeBlock', async ({ face, row, col }) => {
     const { layers: currentLayers, currentLayer: currentLayerNum } = await getCubeState();
-    
+
     if (currentLayers[0][face][row][col]) {
       // Remove the block
       currentLayers[0][face][row][col] = false;
-      
+
       // Check if layer is complete
       if (isLayerComplete(currentLayers[0])) {
         // Move second layer up and create new bottom layer
@@ -247,32 +280,32 @@ io.on('connection', async (socket) => {
           });
         }
       });
-      
+
       // Calculate points
       let pointsEarned = blockCount;
       if (socket.userData.owned_upgrades.includes('double')) pointsEarned *= 2;
       if (socket.userData.owned_upgrades.includes('doublePro')) pointsEarned *= 2;
       if (socket.userData.owned_upgrades.includes('doubleMax')) pointsEarned *= 2;
-      
+
       // Add points
       socket.userData.points += pointsEarned;
       await updateUserData(socket.userId, socket.userData);
-      
+
       // Clear all blocks in the top layer
       Object.keys(currentLayers[0]).forEach(face => {
         if (Array.isArray(currentLayers[0][face])) {
-          currentLayers[0][face] = currentLayers[0][face].map(row => 
+          currentLayers[0][face] = currentLayers[0][face].map(row =>
             row.map(() => false)
           );
         }
       });
-      
+
       // Move second layer up and create new bottom layer
       const newLayers = [currentLayers[1], createLayer()];
       const newLayer = currentLayerNum + 1;
-      
+
       await updateCubeState(newLayers, newLayer);
-      
+
       // Send updated state to all clients
       io.emit('cubeStateUpdate', newLayers);
       io.emit('currentLayer', newLayer);
@@ -289,7 +322,7 @@ io.on('connection', async (socket) => {
   socket.on('updatePoints', async ({ points }) => {
     socket.userData.points += points;
     await updateUserData(socket.userId, socket.userData);
-    
+
     socket.emit('userData', {
       points: socket.userData.points,
       ownedUpgrades: socket.userData.owned_upgrades
@@ -336,9 +369,9 @@ io.on('connection', async (socket) => {
       if (user.points >= cost && !user.owned_upgrades.includes(upgrade)) {
         user.points -= cost;
         user.owned_upgrades.push(upgrade);
-        
+
         await updateUserData(socket.userId, user);
-        
+
         socket.emit('userData', {
           points: user.points,
           ownedUpgrades: user.owned_upgrades

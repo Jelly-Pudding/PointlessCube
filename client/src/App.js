@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Cube from './Cube';
 import Menu from './Menu';
 import Upgrades from './Upgrades';
@@ -18,7 +18,8 @@ function App({ keycloak }) {
   const cubeRef = useRef();
   const [socket, setSocket] = useState(null);
 
-  const upgrades = [
+  // Memoize the upgrades array so it isn’t re‑created on every render
+  const upgrades = useMemo(() => ([
     { name: 'Double Points', cost: 50, effect: 'double' },
     { name: 'Double Points Pro', cost: 3000, effect: 'doublePro' },
     { name: 'Double Points MAX', cost: 30000, effect: 'doubleMax' },
@@ -26,7 +27,7 @@ function App({ keycloak }) {
     { name: 'Fast Auto Clicker', cost: 5000, effect: 'autoClickerFast' },
     { name: 'Ultra Auto Clicker', cost: 50000, effect: 'autoClickerUltra' },
     { name: 'Layer Nuker', cost: 1000000, effect: 'nuker' },
-  ];
+  ]), []);
 
   useEffect(() => {
     if (keycloak && keycloak.authenticated) {
@@ -36,88 +37,96 @@ function App({ keycloak }) {
         transports: ['websocket'],
       });
 
-      newSocket.on('connect', () => {
+      const handleConnect = () => {
         console.log('Connected to Socket.io server');
         if (keycloak.tokenParsed) {
           newSocket.emit('updateUsername', keycloak.tokenParsed.preferred_username);
         }
-      });
+      };
 
-      newSocket.on('cubeStateUpdate', (updatedLayers) => {
+      const handleCubeStateUpdate = (updatedLayers) => {
         setLayers(updatedLayers);
-      });
+      };
 
-      newSocket.on('currentLayer', (layer) => {
+      const handleCurrentLayer = (layer) => {
         setCurrentLayer(layer);
-      });
+      };
 
-      newSocket.on('userData', (userData) => {
+      const handleUserData = (userData) => {
         setPoints(userData.points);
         setOwnedUpgrades(userData.ownedUpgrades);
-      });
+      };
+
+      newSocket.on('connect', handleConnect);
+      newSocket.on('cubeStateUpdate', handleCubeStateUpdate);
+      newSocket.on('currentLayer', handleCurrentLayer);
+      newSocket.on('userData', handleUserData);
 
       setSocket(newSocket);
 
       return () => {
-        newSocket.off('cubeStateUpdate');
-        newSocket.off('currentLayer');
-        newSocket.off('userData');
+        newSocket.off('connect', handleConnect);
+        newSocket.off('cubeStateUpdate', handleCubeStateUpdate);
+        newSocket.off('currentLayer', handleCurrentLayer);
+        newSocket.off('userData', handleUserData);
         newSocket.disconnect();
       };
     }
   }, [keycloak]);
 
-  const handleBlockClick = () => {
+  const handleBlockClick = useCallback(() => {
     let pointsEarned = 1;
     if (ownedUpgrades.includes('double')) pointsEarned *= 2;
     if (ownedUpgrades.includes('doublePro')) pointsEarned *= 2;
     if (ownedUpgrades.includes('doubleMax')) pointsEarned *= 2;
     setPoints((prev) => prev + pointsEarned);
-    socket.emit('updatePoints', { points: pointsEarned });
-  };
+    if (socket) {
+      socket.emit('updatePoints', { points: pointsEarned });
+    }
+  }, [ownedUpgrades, socket]);
 
-  const handleNuker = () => {
-    if (ownedUpgrades.includes('nuker') && !nukerCooldown) {
+  const handleNuker = useCallback(() => {
+    if (ownedUpgrades.includes('nuker') && !nukerCooldown && socket) {
       socket.emit('nukeLayer');
       setNukerCooldown(true);
       setTimeout(() => setNukerCooldown(false), 1800000); // 30 minutes
     }
-  };
+  }, [ownedUpgrades, nukerCooldown, socket]);
 
-  const handleShowLeaderboard = () => {
+  const handleShowLeaderboard = useCallback(() => {
     setShowLeaderboard(true);
-  };
+  }, []);
 
-  const handleCloseLeaderboard = () => {
+  const handleCloseLeaderboard = useCallback(() => {
     setShowLeaderboard(false);
-  };
+  }, []);
 
-  const handleShowUpgrades = () => {
+  const handleShowUpgrades = useCallback(() => {
     setShowUpgrades(true);
-  };
+  }, []);
 
-  const handleCloseUpgrades = () => {
+  const handleCloseUpgrades = useCallback(() => {
     setShowUpgrades(false);
-  };
+  }, []);
 
-  const handleSignOut = () => {
+  const handleSignOut = useCallback(() => {
     if (socket) {
       socket.disconnect();
     }
     keycloak.logout();
-  };
+  }, [socket, keycloak]);
 
-  const handleToggleMute = () => {
+  const handleToggleMute = useCallback(() => {
     setIsMuted(prev => !prev);
-  };
+  }, []);
 
-  const handlePurchaseUpgrade = (upgrade) => {
-    if (points >= upgrade.cost && !ownedUpgrades.includes(upgrade.effect)) {
+  const handlePurchaseUpgrade = useCallback((upgrade) => {
+    if (points >= upgrade.cost && !ownedUpgrades.includes(upgrade.effect) && socket) {
       setPoints((prevPoints) => prevPoints - upgrade.cost);
       setOwnedUpgrades((prevUpgrades) => [...prevUpgrades, upgrade.effect]);
       socket.emit('purchaseUpgrade', { upgrade: upgrade.effect });
     }
-  };
+  }, [points, ownedUpgrades, socket]);
 
   useEffect(() => {
     let interval;

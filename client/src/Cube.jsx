@@ -2,7 +2,7 @@ import React, { useState, useEffect, useImperativeHandle, forwardRef, useMemo, u
 import './Cube.css';
 
 const CUBE_SIZE = 600;
-const GRID_SIZE = 32;
+const GRID_SIZE = 64;
 
 const createBlockParticles = (e, blockColor, face, position) => {
   const rect = e.target.getBoundingClientRect();
@@ -127,20 +127,19 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
   const containerRef = useRef(null);
   const [theta, setTheta] = useState(45);
   const [phi, setPhi] = useState(-30);
-  const [isDragging, setIsDragging] = useState(false);
   const [dragStartTime, setDragStartTime] = useState(null);
   const [lastPos, setLastPos] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1500);
   const [audioContext, setAudioContext] = useState(null);
   const [lastPlayTime, setLastPlayTime] = useState(0);
 
-  // For touch pinch zoom
-  const pointers = useRef({}); // Track active pointers by their id
+  // For pointer tracking and throttling
+  const pointers = useRef({});
   const initialPinchDistance = useRef(null);
   const initialZoom = useRef(null);
+  const lastPointerMoveTime = useRef(0);
 
   const rotationSensitivity = 0.2;
-  const DRAG_THRESHOLD = 5;
   const DRAG_DELAY = 150;
 
   const initAudioContext = useCallback(() => {
@@ -153,7 +152,7 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
   }, [audioContext]);
 
   const playBreakSound = useCallback(() => {
-    if (isMuted) return; // Do nothing if muted
+    if (isMuted) return;
     if (!audioContext) {
       initAudioContext();
       return;
@@ -186,15 +185,13 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
   const handleBlockRemove = useCallback((face, row, col) => {
     playBreakSound();
     onBlockClick?.();
-    socket.emit('removeBlock', { face, row, col });
+    if (socket) {
+      socket.emit('removeBlock', { face, row, col });
+    }
   }, [socket, onBlockClick, playBreakSound]);
 
-  // Pointer event handlers
   const handlePointerDown = useCallback((e) => {
-    // Record pointer position
     pointers.current[e.pointerId] = { x: e.clientX, y: e.clientY };
-
-    // For single-pointer drag, record start time and position
     if (Object.keys(pointers.current).length === 1) {
       e.currentTarget.setPointerCapture(e.pointerId);
       setDragStartTime(Date.now());
@@ -203,7 +200,10 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
   }, []);
 
   const handlePointerMove = useCallback((e) => {
-    // Update the pointer's current position
+    const now = Date.now();
+    if (now - lastPointerMoveTime.current < 16) return; // Throttle to ~60fps
+    lastPointerMoveTime.current = now;
+
     pointers.current[e.pointerId] = { x: e.clientX, y: e.clientY };
 
     const activePointers = Object.keys(pointers.current);
@@ -217,17 +217,13 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
         initialPinchDistance.current = currentDistance;
         initialZoom.current = zoom;
       } else {
-        // Invert the ratio so that spreading fingers zooms in (i.e. decreases zoom)
         let newZoom = initialZoom.current * (initialPinchDistance.current / currentDistance);
-        // Clamp the zoom between 800 and 3000
         newZoom = Math.min(Math.max(newZoom, 700), 3000);
         setZoom(newZoom);
       }
-      // Do not perform drag when pinching
       return;
     }
 
-    // Otherwise, use single pointer for drag
     if (!dragStartTime) return;
     if (Date.now() - dragStartTime < DRAG_DELAY) return;
 
@@ -243,7 +239,6 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
   }, [dragStartTime, lastPos, rotationSensitivity, zoom]);
 
   const handlePointerUp = useCallback((e) => {
-    // Remove pointer from active list
     delete pointers.current[e.pointerId];
     if (Object.keys(pointers.current).length < 2) {
       initialPinchDistance.current = null;
@@ -269,7 +264,6 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
     setDragStartTime(null);
   }, []);
 
-  // Existing wheel event for desktop zoom
   const handleWheel = useCallback((e) => {
     e.preventDefault();
     const zoomFactor = Math.exp(e.deltaY * 0.001);
@@ -310,11 +304,11 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
     }
   }), [layers, handleBlockRemove]);
 
-  const cubeTransform = `
-    translate(-50%, -50%)
-    rotateX(${phi}deg)
-    rotateY(${theta}deg)
-  `;
+  const cubeTransform = useMemo(
+    () => `translate(-50%, -50%) rotateX(${phi}deg) rotateY(${theta}deg)`,
+    [phi, theta]
+  );
+  const cubeWrapperStyle = useMemo(() => ({ perspective: `${zoom}px` }), [zoom]);
 
   return (
     <div
@@ -326,12 +320,7 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
       style={{ touchAction: 'none' }}
       ref={containerRef}
     >
-      <div
-        className="cube-wrapper"
-        style={{
-          perspective: `${zoom}px`,
-        }}
-      >
+      <div className="cube-wrapper" style={cubeWrapperStyle}>
         <div
           className="cube"
           style={{
