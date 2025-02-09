@@ -2,7 +2,6 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
-//import reportWebVitals from './reportWebVitals';
 import Keycloak from 'keycloak-js';
 
 const keycloak = new Keycloak({
@@ -11,11 +10,12 @@ const keycloak = new Keycloak({
   clientId: 'my-app'
 });
 
-keycloak.init({ 
+keycloak.init({
   onLoad: 'login-required',
   silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
   checkLoginIframe: false,
-  redirectUri: 'https://www.minecraftoffline.net/'
+  // Change redirectUri to point to /game so that only the Cube Game triggers Keycloak
+  redirectUri: 'https://www.minecraftoffline.net/game/'
 }).then((authenticated) => {
   if (!authenticated) {
     console.log('User not authenticated!');
@@ -32,5 +32,3 @@ keycloak.init({
 }).catch(e => {
   console.error('Failed to initialize Keycloak', e);
 });
-
-//reportWebVitals();
