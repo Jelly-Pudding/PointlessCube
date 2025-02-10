@@ -1,3 +1,5 @@
+// server.js
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -9,41 +11,54 @@ const fs = require('fs');
 const path = require('path');
 
 const {
-  KEYCLOAK_ISSUER,
+  KEYCLOAK_PUBLIC_ISSUER,
+  KEYCLOAK_INTERNAL_JWKS_URI,
   PGHOST,
   PGUSER,
   PGPASSWORD,
   PGDATABASE,
-  PGPORT,
+  PGPORT
 } = process.env;
 
-// Initialize JWKS client
+// Log the issuer and JWKS for debugging:
+console.log('Using Keycloak Public Issuer:', KEYCLOAK_PUBLIC_ISSUER);
+console.log('Internal JWKS URL:', KEYCLOAK_INTERNAL_JWKS_URI);
+
+// Initialize JWKS client with the internal Keycloak URL
 const client = jwksClient({
-  jwksUri: `${KEYCLOAK_ISSUER}/protocol/openid-connect/certs`
+  jwksUri: KEYCLOAK_INTERNAL_JWKS_URI
 });
 
 function getKey(header, callback) {
+  console.log('Getting signing key for kid:', header.kid);
   client.getSigningKey(header.kid, (err, key) => {
-    if (err) return callback(err);
+    if (err) {
+      console.error('Error getting signing key:', err);
+      return callback(err);
+    }
     const signingKey = key.getPublicKey();
+    console.log('Got signing key successfully');
     callback(null, signingKey);
   });
 }
 
 function verifyToken(token) {
   return new Promise((resolve, reject) => {
+    console.log('Verifying token...');
     jwt.verify(
       token,
       getKey,
       {
-        issuer: [
-          KEYCLOAK_ISSUER,
-          KEYCLOAK_ISSUER.replace('keycloak', 'localhost')
-        ],
+        // The token's "iss" claim must match your public Keycloak issuer
+        issuer: [KEYCLOAK_PUBLIC_ISSUER],
         algorithms: ['RS256'],
       },
       (err, decoded) => {
-        if (err) return reject(err);
+        if (err) {
+          console.error('Token verification failed:', err);
+          return reject(err);
+        }
+        console.log('Token verified successfully for user:', decoded.sub);
         resolve(decoded);
       }
     );
@@ -59,7 +74,7 @@ const pool = new Pool({
   port: PGPORT
 });
 
-// Cube logic – update grid size from 32 to 64
+// Increase cube grid size to 64
 const GRID_SIZE = 64;
 
 function createFace() {
@@ -91,7 +106,6 @@ function isLayerComplete(layer) {
   );
 }
 
-// Helper: Check if a given cube state has the expected grid size.
 function isCubeStateValid(cubeLayers) {
   return (
     Array.isArray(cubeLayers) &&
@@ -117,24 +131,32 @@ function isCubeStateValid(cubeLayers) {
       }
       console.log('Migrations ran successfully.');
 
-      // Initialize cube state if empty or if grid dimensions are outdated
-      const { rows } = await clientDB.query('SELECT layers FROM cube_state WHERE id=1');
-      let layers;
-      try {
-        // Check if rows[0].layers is a string; if so, parse it.
-        layers = typeof rows[0].layers === 'string'
-          ? JSON.parse(rows[0].layers)
-          : rows[0].layers;
-      } catch (e) {
-        layers = null;
-      }
-      if (!layers || !isCubeStateValid(layers)) {
+      const checkRow = await clientDB.query('SELECT COUNT(*) FROM cube_state WHERE id=1');
+      if (checkRow.rows[0].count === '0') {
         const initialLayers = [createLayer(), createLayer()];
         await clientDB.query(
-          'UPDATE cube_state SET layers=$1 WHERE id=1',
-          [JSON.stringify(initialLayers)]
+          'INSERT INTO cube_state (id, layers, current_layer) VALUES ($1, $2, $3)',
+          [1, JSON.stringify(initialLayers), 1]
         );
-        console.log('Cube state reinitialized with grid size:', GRID_SIZE);
+        console.log('Created initial cube state');
+      } else {
+        const { rows } = await clientDB.query('SELECT layers FROM cube_state WHERE id=1');
+        let layers;
+        try {
+          layers = typeof rows[0].layers === 'string'
+            ? JSON.parse(rows[0].layers)
+            : rows[0].layers;
+        } catch (e) {
+          layers = null;
+        }
+        if (!layers || !isCubeStateValid(layers)) {
+          const initialLayers = [createLayer(), createLayer()];
+          await clientDB.query(
+            'UPDATE cube_state SET layers=$1 WHERE id=1',
+            [JSON.stringify(initialLayers)]
+          );
+          console.log('Reset invalid cube state');
+        }
       }
     } finally {
       clientDB.release();
@@ -175,19 +197,29 @@ async function updateUserData(userId, data) {
 }
 
 async function getCubeState() {
+  console.log('Getting cube state from database...');
   const { rows } = await pool.query(
     'SELECT layers, current_layer FROM cube_state WHERE id=1'
   );
-  // rows[0].layers might already be an object (because of JSONB)
   let layersData = rows[0].layers;
   let cubeLayers;
-  if (typeof layersData === 'string') {
-    cubeLayers = JSON.parse(layersData);
-  } else {
-    cubeLayers = layersData;
+  try {
+    if (typeof layersData === 'string') {
+      cubeLayers = JSON.parse(layersData);
+    } else {
+      cubeLayers = layersData;
+    }
+    console.log('Retrieved cube layers:', {
+      hasLayers: !!cubeLayers,
+      layerCount: cubeLayers?.length
+    });
+  } catch (e) {
+    console.error('Error parsing cube layers:', e);
+    cubeLayers = null;
   }
-  // If stored cube layers are not of the expected grid size, reinitialize them.
+
   if (!isCubeStateValid(cubeLayers)) {
+    console.log('Creating new cube layers due to invalid state');
     cubeLayers = [createLayer(), createLayer()];
     await updateCubeState(cubeLayers, rows[0].current_layer);
   }
@@ -217,15 +249,39 @@ const io = new Server(server, {
 
 // Socket middleware
 io.use(async (socket, next) => {
+  console.log('Socket authentication attempt');
   const token = socket.handshake.auth?.token;
-  if (!token) return next(new Error('Authentication token missing'));
+  if (!token) {
+    console.error('No token provided');
+    return next(new Error('Authentication token missing'));
+  }
 
   try {
     const decoded = await verifyToken(token);
     socket.userId = decoded.sub;
     socket.userData = await getUserData(socket.userId);
+    console.log('Socket authenticated for user:', socket.userId);
+
+    // ADDED LINES HERE:
+    // If there's no username in the DB for this user, set it from Keycloak token fields
+    const keycloakUsername =
+      decoded.preferred_username ||
+      decoded.username ||
+      decoded.name ||
+      'Anonymous';
+
+    if (!socket.userData.username || socket.userData.username.trim() === '') {
+      await pool.query(
+        'UPDATE users SET username = $1 WHERE id = $2',
+        [keycloakUsername, socket.userId]
+      );
+      socket.userData.username = keycloakUsername;
+    }
+    // END OF ADDED LINES
+
     next();
   } catch (err) {
+    console.error('Socket authentication failed:', err);
     next(new Error('Invalid authentication token'));
   }
 });
@@ -234,25 +290,35 @@ io.use(async (socket, next) => {
 io.on('connection', async (socket) => {
   console.log(`User connected: ${socket.userId}`);
 
-  const { layers, currentLayer } = await getCubeState();
+  try {
+    const { layers, currentLayer } = await getCubeState();
+    console.log('Retrieved cube state for new connection:', {
+      hasLayers: !!layers,
+      layerCount: layers?.length,
+      currentLayer
+    });
 
-  socket.emit('cubeStateUpdate', layers);
-  socket.emit('userData', {
-    points: socket.userData.points,
-    ownedUpgrades: socket.userData.owned_upgrades
-  });
-  socket.emit('currentLayer', currentLayer);
+    socket.emit('cubeStateUpdate', layers);
+    console.log('Emitted cube state update');
+
+    socket.emit('userData', {
+      points: socket.userData.points,
+      ownedUpgrades: socket.userData.owned_upgrades
+    });
+    console.log('Emitted user data');
+
+    socket.emit('currentLayer', currentLayer);
+    console.log('Emitted current layer');
+  } catch (error) {
+    console.error('Error handling socket connection:', error);
+  }
 
   socket.on('removeBlock', async ({ face, row, col }) => {
     const { layers: currentLayers, currentLayer: currentLayerNum } = await getCubeState();
-
     if (currentLayers[0][face][row][col]) {
-      // Remove the block
       currentLayers[0][face][row][col] = false;
 
-      // Check if layer is complete
       if (isLayerComplete(currentLayers[0])) {
-        // Move second layer up and create new bottom layer
         const newLayers = [currentLayers[1], createLayer()];
         const newLayer = currentLayerNum + 1;
         await updateCubeState(newLayers, newLayer);
@@ -269,7 +335,6 @@ io.on('connection', async (socket) => {
     if (socket.userData.owned_upgrades.includes('nuker')) {
       const { layers: currentLayers, currentLayer: currentLayerNum } = await getCubeState();
 
-      // Count blocks for points
       let blockCount = 0;
       Object.keys(currentLayers[0]).forEach(face => {
         if (Array.isArray(currentLayers[0][face])) {
@@ -281,17 +346,15 @@ io.on('connection', async (socket) => {
         }
       });
 
-      // Calculate points
       let pointsEarned = blockCount;
       if (socket.userData.owned_upgrades.includes('double')) pointsEarned *= 2;
       if (socket.userData.owned_upgrades.includes('doublePro')) pointsEarned *= 2;
       if (socket.userData.owned_upgrades.includes('doubleMax')) pointsEarned *= 2;
 
-      // Add points
       socket.userData.points += pointsEarned;
       await updateUserData(socket.userId, socket.userData);
 
-      // Clear all blocks in the top layer
+      // Remove all blocks on the current layer
       Object.keys(currentLayers[0]).forEach(face => {
         if (Array.isArray(currentLayers[0][face])) {
           currentLayers[0][face] = currentLayers[0][face].map(row =>
@@ -300,13 +363,12 @@ io.on('connection', async (socket) => {
         }
       });
 
-      // Move second layer up and create new bottom layer
+      // Move on to next layer
       const newLayers = [currentLayers[1], createLayer()];
       const newLayer = currentLayerNum + 1;
 
       await updateCubeState(newLayers, newLayer);
 
-      // Send updated state to all clients
       io.emit('cubeStateUpdate', newLayers);
       io.emit('currentLayer', newLayer);
       socket.emit('userData', {

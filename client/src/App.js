@@ -18,7 +18,6 @@ function App({ keycloak }) {
   const cubeRef = useRef();
   const [socket, setSocket] = useState(null);
 
-  // Memoize the upgrades array so it isn’t re‑created on every render
   const upgrades = useMemo(() => ([
     { name: 'Double Points', cost: 50, effect: 'double' },
     { name: 'Double Points Pro', cost: 3000, effect: 'doublePro' },
@@ -31,44 +30,57 @@ function App({ keycloak }) {
 
   useEffect(() => {
     if (keycloak && keycloak.authenticated) {
+      console.log('Creating socket with token:', keycloak.token.substring(0, 20) + '...');
+      console.log('Keycloak config:', {
+        url: keycloak.authServerUrl,
+        realm: keycloak.realm,
+        clientId: keycloak.clientId
+      });
+
       const newSocket = io('/', {
         path: '/api/socket.io',
         auth: { token: keycloak.token },
         transports: ['websocket'],
       });
 
-      const handleConnect = () => {
-        console.log('Connected to Socket.io server');
-        if (keycloak.tokenParsed) {
-          newSocket.emit('updateUsername', keycloak.tokenParsed.preferred_username);
-        }
-      };
+      newSocket.on('connect', () => {
+        console.log('Socket connected successfully');
+      });
 
-      const handleCubeStateUpdate = (updatedLayers) => {
+      newSocket.on('connect_error', (error) => {
+        console.error('Socket connection error details:', {
+          message: error.message,
+          data: error.data,
+          description: error.description
+        });
+      });
+
+      newSocket.on('cubeStateUpdate', (updatedLayers) => {
+        console.log('Received cube state update:', {
+          hasLayers: !!updatedLayers,
+          layerCount: updatedLayers?.length
+        });
         setLayers(updatedLayers);
-      };
+      });
 
-      const handleCurrentLayer = (layer) => {
+      newSocket.on('currentLayer', (layer) => {
+        console.log('Received current layer:', layer);
         setCurrentLayer(layer);
-      };
+      });
 
-      const handleUserData = (userData) => {
+      newSocket.on('userData', (userData) => {
+        console.log('Received user data:', {
+          points: userData.points,
+          upgradeCount: userData.ownedUpgrades?.length
+        });
         setPoints(userData.points);
         setOwnedUpgrades(userData.ownedUpgrades);
-      };
-
-      newSocket.on('connect', handleConnect);
-      newSocket.on('cubeStateUpdate', handleCubeStateUpdate);
-      newSocket.on('currentLayer', handleCurrentLayer);
-      newSocket.on('userData', handleUserData);
+      });
 
       setSocket(newSocket);
 
       return () => {
-        newSocket.off('connect', handleConnect);
-        newSocket.off('cubeStateUpdate', handleCubeStateUpdate);
-        newSocket.off('currentLayer', handleCurrentLayer);
-        newSocket.off('userData', handleUserData);
+        console.log('Cleaning up socket connection');
         newSocket.disconnect();
       };
     }
@@ -150,6 +162,7 @@ function App({ keycloak }) {
   }, [ownedUpgrades, layers, socket]);
 
   if (!layers) {
+    console.log('No layers available, showing loading state');
     return <div className="App">Loading cube...</div>;
   }
 

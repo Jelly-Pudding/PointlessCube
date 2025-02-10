@@ -113,7 +113,6 @@ services:
     build: ./client
     container_name: react-build
     command: sh -c "npm run build"
-    # Here we mount a named volume so that the build output is saved to a location that nginx can use.
     volumes:
       - react-build:/usr/src/app/build
     depends_on:
@@ -129,6 +128,14 @@ services:
         reservations:
           memory: "1G"
 
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - ./nginx/certbot/conf:/etc/letsencrypt
+      - ./nginx/certbot/www:/var/www/certbot
+    depends_on:
+      - nginx
+
   nginx:
     build: ./nginx
     container_name: nginx
@@ -142,9 +149,9 @@ services:
         condition: service_started
     volumes:
       - ./nginx/landing:/usr/share/nginx/landing:ro
-      # Mount the same volume here (read-only) so nginx can serve the build artifacts.
       - react-build:/usr/share/nginx/game:ro
-      - ./nginx/certs:/etc/ssl:ro
+      - ./nginx/certbot/conf:/etc/letsencrypt:ro
+      - ./nginx/certbot/www:/var/www/certbot:ro
     networks:
       - backend
     deploy:

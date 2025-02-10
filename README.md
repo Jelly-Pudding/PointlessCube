@@ -62,3 +62,33 @@ Access app at www.minecraftoffline.net
 # Useful Commands
 docker compose up --build -d
 docker-compose down
+
+---
+
+## Migration Away from Cloudflare
+
+We previously used Cloudflare for SSL/TLS termination. Now, we’ve **migrated** to Let’s Encrypt via **Certbot** on our own server. Here’s how we did it:
+
+1. **Disable Cloudflare proxy**  
+   - In your Cloudflare DNS settings, switch any proxied records (“orange cloud”) to **DNS-only** (“gray cloud”), or remove them altogether if you’re no longer using Cloudflare’s DNS at all.  
+   - This ensures traffic goes **directly** to your server’s IP, bypassing Cloudflare.
+
+2. **Update DNS**  
+   - Point your domain (e.g. `www.minecraftoffline.net`) to your server’s IP.  
+   - Wait for DNS propagation so requests are sent straight to your host.
+
+3. **Remove Cloudflare-specific SSL configs**  
+   - We no longer need origin certificates or a Cloudflare CA bundle.  
+   - Delete or comment out references to Cloudflare’s `.crt` and `.key` in your old Nginx config.  
+   - Set up the Nginx config to terminate SSL using Let’s Encrypt certificates from Certbot instead.
+
+4. **Set up Let’s Encrypt certificates with Certbot**  
+   - In our Docker Compose file, we included a **certbot** service and volumes for storing `/etc/letsencrypt`.  
+   - The Nginx container references those certificates (`fullchain.pem` and `privkey.pem`) to serve HTTPS.  
+   - HTTP on port 80 is used for ACME challenges. All non-challenge requests are redirected to HTTPS.
+
+5. **Redeploy**  
+   - Run `docker-compose up --build -d` to rebuild images and start containers with the updated Nginx/Certbot setup.  
+   - Verify at `https://www.minecraftoffline.net` that you have a valid Let’s Encrypt certificate, and Cloudflare is no longer in the loop.
+
+---
