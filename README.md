@@ -84,8 +84,10 @@ We previously used Cloudflare for SSL/TLS termination. Now, we’ve **migrated**
 
 4. **Set up Let’s Encrypt certificates with Certbot**  
    - In our Docker Compose file, we included a **certbot** service and volumes for storing `/etc/letsencrypt`.  
-   - The Nginx container references those certificates (`fullchain.pem` and `privkey.pem`) to serve HTTPS.  
+   - The Nginx container references those certificates (`fullchain.pem` and `privkey.pem`) to serve HTTPS.
    - HTTP on port 80 is used for ACME challenges. All non-challenge requests are redirected to HTTPS.
+   - Certificates can be easily generated. First bring down everything (`docker compose down`). Then run a command like the one below in the project's root directory:
+     `docker run --rm -it -p 80:80 -v $(pwd)/nginx/certbot/conf:/etc/letsencrypt -v $(pwd)/nginx/certbot/www:/var/www/certbot certbot/certbot certonly --standalone -d primeanarchy.com -d www.primeanarchy.com --email your-email-here@hello.com --agree-tos --no-eff-email`
 
 5. **Redeploy**  
    - Run `docker-compose up --build -d` to rebuild images and start containers with the updated Nginx/Certbot setup.  
