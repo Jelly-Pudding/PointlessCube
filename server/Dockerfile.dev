@@ -1,0 +1,16 @@
+FROM node:18-alpine
+
+WORKDIR /usr/src/app
+
+COPY package*.json ./
+RUN npm install
+
+# Install nodemon for development
+RUN npm install -g nodemon
+
+# We'll mount the source code as a volume in docker-compose
+# so we don't need to copy it here
+
+EXPOSE 4000
+
+CMD ["nodemon", "server.js"] 

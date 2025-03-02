@@ -1,24 +1,68 @@
-// src/Cube.jsx
-import React, { useState, useEffect, useImperativeHandle, forwardRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useImperativeHandle, forwardRef, useMemo, useCallback, useRef } from 'react';
 import './Cube.css';
 
 const CUBE_SIZE = 600;
-const GRID_SIZE = 32;
+const GRID_SIZE = 64;
 
-const audioContext = new AudioContext();
-const gainNode = audioContext.createGain();
-gainNode.connect(audioContext.destination);
+const createBlockParticles = (e, blockColor, face, position) => {
+  const rect = e.target.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
 
-const playBreakSound = () => {
-  const oscillator = audioContext.createOscillator();
-  oscillator.connect(gainNode);
-  oscillator.type = 'sine';
-  oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
-  gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-  oscillator.start(audioContext.currentTime);
-  oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.1);
-  gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-  oscillator.stop(audioContext.currentTime + 0.1);
+  const particleCount = Math.floor(Math.random() * 3) + 2; // Random between 2 and 4
+  for (let i = 0; i < particleCount; i++) {
+    const particle = document.createElement('div');
+    particle.className = 'block-particle';
+    particle.style.backgroundColor = blockColor;
+    document.body.appendChild(particle);
+
+    // Slightly larger particles
+    const size = Math.random() * 10 + 6;
+    particle.style.width = `${size}px`;
+    particle.style.height = `${size}px`;
+
+    let px = centerX + (Math.random() - 0.5) * 5;
+    let py = centerY + (Math.random() - 0.5) * 5;
+
+    particle.style.left = `${px}px`;
+    particle.style.top = `${py}px`;
+
+    // Slow, random initial direction
+    const angle = Math.random() * Math.PI * 2;
+    const velocity = Math.random() * 0.3 + 0.2;
+    let vx = Math.cos(angle) * velocity;
+    let vy = Math.sin(angle) * velocity;
+
+    let frame = 0;
+    const maxFrames = 180; // About 3 seconds at 60 fps
+    const gravity = -0.005; // A small negative value for a gentle upward drift
+
+    const animate = () => {
+      frame++;
+      vy += gravity;
+      px += vx;
+      py += vy;
+
+      const sizeRatio = 1 - frame / maxFrames;
+      particle.style.width = `${size * sizeRatio}px`;
+      particle.style.height = `${size * sizeRatio}px`;
+      particle.style.left = `${px}px`;
+      particle.style.top = `${py}px`;
+
+      // Fade out gradually, starting halfway through the lifespan
+      if (frame > maxFrames * 0.5) {
+        const fadeRatio = 1 - (frame - maxFrames * 0.5) / (maxFrames * 0.5);
+        particle.style.opacity = fadeRatio;
+      }
+
+      if (frame < maxFrames) {
+        requestAnimationFrame(animate);
+      } else {
+        particle.remove();
+      }
+    };
+    requestAnimationFrame(animate);
+  }
 };
 
 const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize }) => {
@@ -47,6 +91,7 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
               onPointerDown={(e) => {
                 e.stopPropagation();
                 if (isTopLayer) {
+                  createBlockParticles(e, blockColor, faceName, { row: i, col: j });
                   handleClick(faceName, i, j);
                 }
               }}
@@ -73,80 +118,169 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
       </div>
     </div>
   );
-}, (prevProps, nextProps) => 
-  prevProps.transform === nextProps.transform && 
+}, (prevProps, nextProps) =>
+  prevProps.transform === nextProps.transform &&
   prevProps.layers === nextProps.layers
 );
 
-const Cube = forwardRef(({ onBlockClick, layers, socket }, ref) => {
+const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef) => {
+  const containerRef = useRef(null);
   const [theta, setTheta] = useState(45);
   const [phi, setPhi] = useState(-30);
-  const [isDragging, setIsDragging] = useState(false);
   const [dragStartTime, setDragStartTime] = useState(null);
   const [lastPos, setLastPos] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1500);
+  const [audioContext, setAudioContext] = useState(null);
+  const [lastPlayTime, setLastPlayTime] = useState(0);
+
+  // For pointer tracking and throttling
+  const pointers = useRef({});
+  const initialPinchDistance = useRef(null);
+  const initialZoom = useRef(null);
+  const lastPointerMoveTime = useRef(0);
 
   const rotationSensitivity = 0.2;
-  const DRAG_THRESHOLD = 5;
   const DRAG_DELAY = 150;
+
+  const initAudioContext = useCallback(() => {
+    if (!audioContext) {
+      const ctx = new AudioContext();
+      const gain = ctx.createGain();
+      gain.connect(ctx.destination);
+      setAudioContext({ context: ctx, gainNode: gain });
+    }
+  }, [audioContext]);
+
+  const playBreakSound = useCallback(() => {
+    if (isMuted) return;
+    if (!audioContext) {
+      initAudioContext();
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastPlayTime < 30) return;
+    setLastPlayTime(now);
+
+    const oscillator = audioContext.context.createOscillator();
+    const tempGain = audioContext.context.createGain();
+
+    oscillator.connect(tempGain);
+    tempGain.connect(audioContext.context.destination);
+
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(200, audioContext.context.currentTime);
+    tempGain.gain.setValueAtTime(0.2, audioContext.context.currentTime);
+    oscillator.start(audioContext.context.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.context.currentTime + 0.1);
+    tempGain.gain.exponentialRampToValueAtTime(0.01, audioContext.context.currentTime + 0.15);
+    oscillator.stop(audioContext.context.currentTime + 0.15);
+
+    setTimeout(() => {
+      tempGain.disconnect();
+      oscillator.disconnect();
+    }, 200);
+  }, [audioContext, initAudioContext, lastPlayTime, isMuted]);
 
   const handleBlockRemove = useCallback((face, row, col) => {
     playBreakSound();
     onBlockClick?.();
-    socket.emit('removeBlock', { face, row, col });
-  }, [socket, onBlockClick]);
+    if (socket) {
+      socket.emit('removeBlock', { face, row, col });
+    }
+  }, [socket, onBlockClick, playBreakSound]);
 
-  const handleMouseDown = useCallback((e) => {
-    setDragStartTime(Date.now());
-    setLastPos({ x: e.clientX, y: e.clientY });
+  const handlePointerDown = useCallback((e) => {
+    pointers.current[e.pointerId] = { x: e.clientX, y: e.clientY };
+    if (Object.keys(pointers.current).length === 1) {
+      e.currentTarget.setPointerCapture(e.pointerId);
+      setDragStartTime(Date.now());
+      setLastPos({ x: e.clientX, y: e.clientY });
+    }
   }, []);
 
-  const handleMouseMove = useCallback((e) => {
+  const handlePointerMove = useCallback((e) => {
+    const now = Date.now();
+    if (now - lastPointerMoveTime.current < 16) return; // Throttle to ~60fps
+    lastPointerMoveTime.current = now;
+
+    pointers.current[e.pointerId] = { x: e.clientX, y: e.clientY };
+
+    const activePointers = Object.keys(pointers.current);
+    if (activePointers.length >= 2) {
+      // Pinch-zoom branch
+      const [id1, id2] = activePointers;
+      const p1 = pointers.current[id1];
+      const p2 = pointers.current[id2];
+      const currentDistance = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      if (initialPinchDistance.current === null) {
+        initialPinchDistance.current = currentDistance;
+        initialZoom.current = zoom;
+      } else {
+        let newZoom = initialZoom.current * (initialPinchDistance.current / currentDistance);
+        newZoom = Math.min(Math.max(newZoom, 700), 3000);
+        setZoom(newZoom);
+      }
+      return;
+    }
+
     if (!dragStartTime) return;
     if (Date.now() - dragStartTime < DRAG_DELAY) return;
 
-    const deltaX = Math.abs(e.clientX - lastPos.x);
-    const deltaY = Math.abs(e.clientY - lastPos.y);
-    
-    if (!isDragging && (deltaX < DRAG_THRESHOLD && deltaY < DRAG_THRESHOLD)) return;
+    const deltaX = e.clientX - lastPos.x;
+    const deltaY = e.clientY - lastPos.y;
 
-    if (!isDragging) {
-      setIsDragging(true);
-    }
-
-    requestAnimationFrame(() => {
-      setTheta(prevTheta => prevTheta + (e.clientX - lastPos.x) * rotationSensitivity);
-      setPhi(prevPhi => {
-        const newPhi = prevPhi - (e.clientY - lastPos.y) * rotationSensitivity;
-        return Math.max(-90, Math.min(90, newPhi));
-      });
+    setTheta(prevTheta => prevTheta + deltaX * rotationSensitivity);
+    setPhi(prevPhi => {
+      const newPhi = prevPhi - deltaY * rotationSensitivity;
+      return Math.max(-90, Math.min(90, newPhi));
     });
-
     setLastPos({ x: e.clientX, y: e.clientY });
-  }, [isDragging, lastPos, rotationSensitivity, dragStartTime]);
+  }, [dragStartTime, lastPos, rotationSensitivity, zoom]);
 
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
+  const handlePointerUp = useCallback((e) => {
+    delete pointers.current[e.pointerId];
+    if (Object.keys(pointers.current).length < 2) {
+      initialPinchDistance.current = null;
+      initialZoom.current = null;
+    }
+    if (Object.keys(pointers.current).length === 0) {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+      setDragStartTime(null);
+    }
+  }, []);
+
+  const handlePointerCancel = useCallback((e) => {
+    delete pointers.current[e.pointerId];
+    if (Object.keys(pointers.current).length < 2) {
+      initialPinchDistance.current = null;
+      initialZoom.current = null;
+    }
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
     setDragStartTime(null);
   }, []);
 
   const handleWheel = useCallback((e) => {
     e.preventDefault();
-    requestAnimationFrame(() => {
-      setZoom(prevZoom => {
-        const zoomFactor = Math.exp(e.deltaY * 0.001);
-        return Math.min(Math.max(prevZoom * zoomFactor, 800), 3000);
-      });
-    });
+    const zoomFactor = Math.exp(e.deltaY * 0.001);
+    setZoom(prev => Math.min(Math.max(prev * zoomFactor, 800), 3000));
   }, []);
 
-  const cubeTransform = `
-    translate(-50%, -50%)
-    rotateX(${phi}deg)
-    rotateY(${theta}deg)
-  `;
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener('wheel', handleWheel, { passive: false });
+      return () => {
+        container.removeEventListener('wheel', handleWheel);
+      };
+    }
+  }, [handleWheel]);
 
-  useImperativeHandle(ref, () => ({
+  useImperativeHandle(forwardedRef, () => ({
     requestRandomBlockRemoval() {
       if (!layers) return;
       const faceNames = ['front', 'back', 'top', 'bottom', 'left', 'right'];
@@ -170,21 +304,23 @@ const Cube = forwardRef(({ onBlockClick, layers, socket }, ref) => {
     }
   }), [layers, handleBlockRemove]);
 
+  const cubeTransform = useMemo(
+    () => `translate(-50%, -50%) rotateX(${phi}deg) rotateY(${theta}deg)`,
+    [phi, theta]
+  );
+  const cubeWrapperStyle = useMemo(() => ({ perspective: `${zoom}px` }), [zoom]);
+
   return (
     <div
       className="cube-container"
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onWheel={handleWheel}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      style={{ touchAction: 'none' }}
+      ref={containerRef}
     >
-      <div
-        className="cube-wrapper"
-        style={{
-          perspective: `${zoom}px`,
-        }}
-      >
+      <div className="cube-wrapper" style={cubeWrapperStyle}>
         <div
           className="cube"
           style={{

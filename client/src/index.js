@@ -2,20 +2,35 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
-import reportWebVitals from './reportWebVitals';
 import Keycloak from 'keycloak-js';
 
+// Determine if we're in development or production
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+// Use different URLs based on environment
+const keycloakUrl = isDevelopment 
+  ? 'http://localhost:8080/auth'
+  : 'https://www.minecraftoffline.net/auth';
+
+const redirectUri = isDevelopment
+  ? 'http://localhost:3000/'
+  : 'https://www.minecraftoffline.net/game/';
+
+console.log('Environment:', process.env.NODE_ENV);
+console.log('Using Keycloak URL:', keycloakUrl);
+console.log('Using redirect URI:', redirectUri);
+
 const keycloak = new Keycloak({
-  url: 'http://localhost:8080',
+  url: keycloakUrl,
   realm: 'myrealm',
   clientId: 'my-app'
 });
 
-keycloak.init({ 
+keycloak.init({
   onLoad: 'login-required',
   silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
   checkLoginIframe: false,
-  redirectUri: 'http://localhost:80/'
+  redirectUri: redirectUri
 }).then((authenticated) => {
   if (!authenticated) {
     console.log('User not authenticated!');
@@ -23,8 +38,6 @@ keycloak.init({
     console.log('User authenticated');
   }
 
-  // Once Keycloak is initialized and the user is authenticated (or attempted),
-  // render the app and pass the Keycloak instance.
   const root = ReactDOM.createRoot(document.getElementById('root'));
   root.render(
     <React.StrictMode>
@@ -34,6 +47,3 @@ keycloak.init({
 }).catch(e => {
   console.error('Failed to initialize Keycloak', e);
 });
-
-// For performance:
-reportWebVitals();

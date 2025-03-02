@@ -1,0 +1,114 @@
+services:
+  keycloak_postgres:
+    image: postgres:15
+    container_name: keycloak_postgres_dev
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-password}
+    volumes:
+      - keycloak-db-data-dev:/var/lib/postgresql/data
+    networks:
+      - backend
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:22.0.3
+    container_name: keycloak_dev
+    command: [
+        "start-dev",
+        "--http-relative-path=/auth"
+    ]
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-password}
+      KC_DB: postgres
+      KC_DB_URL_HOST: keycloak_postgres
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-password}
+    depends_on:
+      keycloak_postgres:
+        condition: service_healthy
+    networks:
+      - backend
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  app_postgres:
+    image: postgres:15
+    container_name: app_postgres_dev
+    environment:
+      POSTGRES_DB: myapp
+      POSTGRES_USER: myapp
+      POSTGRES_PASSWORD: ${APP_DB_PASSWORD:-appsecretpassword}
+    volumes:
+      - app-db-data-dev:/var/lib/postgresql/data
+    networks:
+      - backend
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myapp -d myapp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build: 
+      context: ./server
+      dockerfile: Dockerfile.dev
+    container_name: server_dev
+    volumes:
+      - ./server:/usr/src/app
+      - /usr/src/app/node_modules
+    environment:
+      - NODE_ENV=development
+      - KEYCLOAK_ISSUER=http://localhost:8080/auth/realms/myrealm
+      - KEYCLOAK_PUBLIC_ISSUER=http://localhost:8080/auth/realms/myrealm
+      - KEYCLOAK_INTERNAL_JWKS_URI=http://keycloak:8080/auth/realms/myrealm/protocol/openid-connect/certs
+      - PGHOST=app_postgres
+      - PGUSER=myapp
+      - PGPASSWORD=${APP_DB_PASSWORD:-appsecretpassword}
+      - PGDATABASE=myapp
+      - PGPORT=5432
+      - PORT=4000
+    depends_on:
+      app_postgres:
+        condition: service_healthy
+    networks:
+      - backend
+    ports:
+      - "4000:4000"
+    command: npm run dev
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile.dev
+    container_name: client_dev
+    volumes:
+      - ./client:/usr/src/app
+      - /usr/src/app/node_modules
+    depends_on:
+      - server
+    networks:
+      - backend
+    ports:
+      - "3000:3000"
+    command: npm start
+
+volumes:
+  keycloak-db-data-dev:
+  app-db-data-dev:
+
+networks:
+  backend:
+    driver: bridge 

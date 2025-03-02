@@ -6,7 +6,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  z-index: 100; /* Ensure the menu stays on top */
+  z-index: 100;
 }
 
 .menu button {
@@ -33,6 +33,12 @@
 }
 
 .menu .points-display {
+  margin-bottom: 10px;
+  font-size: 18px;
+  color: white;
+}
+
+.menu .layer-display {
   margin-bottom: 10px;
   font-size: 18px;
   color: white;

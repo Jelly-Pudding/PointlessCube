@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+ <meta charset="UTF-8" />
+ <meta name="viewport" content="width=device-width, initial-scale=1" />
+ <link rel="icon" href="server-icon.png" type="image/png">
+ <title>MinecraftOffline.net</title>
+ <style>
+   /* Reset */
+   * {
+     margin: 0;
+     padding: 0;
+     box-sizing: border-box;
+   }
+   html, body {
+     width: 100%;
+     height: 100%;
+     overflow: hidden;
+     font-family: Arial, sans-serif;
+   }
+   /* Fullscreen canvas for starfield */
+   #starfield {
+     position: fixed;
+     top: 0;
+     left: 0;
+     width: 100%;
+     height: 100%;
+     background: #000;
+     z-index: -1;
+   }
+   /* Main content container as a flex column so the footer stays at the bottom */
+   .container {
+     position: relative;
+     max-width: 800px;
+     margin: 0 auto;
+     padding: 20px 30px;
+     color: #fff;
+     display: flex;
+     flex-direction: column;
+     min-height: 100vh;
+     overflow-y: auto;
+   }
+   header {
+     text-align: center;
+     margin-bottom: 20px;
+   }
+   header h1 {
+     font-size: 2.8rem;
+     margin-bottom: 10px;
+   }
+   header p {
+     font-size: 1.2rem;
+     color: #bbb;
+   }
+   /* Tab Navigation */
+   .tabs {
+     display: flex;
+     justify-content: center;
+     margin-bottom: 20px;
+     border-bottom: 1px solid #444;
+   }
+   .tabs button {
+     flex: 1;
+     background: none;
+     border: none;
+     color: #ccc;
+     padding: 10px 0;
+     font-size: 1.1rem;
+     cursor: pointer;
+     transition: color 0.3s, border-bottom 0.3s;
+   }
+   .tabs button:hover,
+   .tabs button.active {
+     color: #007BFF;
+     border-bottom: 2px solid #007BFF;
+   }
+   /* Tab Content */
+   .tab-content {
+     display: none;
+     animation: fadein 0.3s;
+   }
+   .tab-content.active {
+     display: block;
+   }
+   @keyframes fadein {
+     from { opacity: 0; }
+     to { opacity: 1; }
+   }
+   .tab-content h2 {
+     font-size: 1.8rem;
+     margin-bottom: 10px;
+   }
+   .tab-content p {
+     margin-bottom: 15px;
+     font-size: 1rem;
+     line-height: 1.5;
+   }
+   .tab-content ul {
+     list-style: none;
+     padding-left: 0;
+   }
+   .tab-content ul li {
+     margin-bottom: 8px;
+     font-size: 1rem;
+   }
+   /* Call-to-action Button */
+   .cta-button {
+     display: inline-block;
+     background: #007BFF;
+     color: #fff;
+     text-decoration: none;
+     padding: 12px 24px;
+     border-radius: 5px;
+     font-size: 1rem;
+     transition: background 0.3s;
+   }
+   .cta-button:hover {
+     background: #0056b3;
+   }
+   /* Footer always at the bottom */
+   footer {
+     text-align: center;
+     margin-top: auto;
+     font-size: 0.9rem;
+     color: #aaa;
+     padding: 10px 0;
+   }
+   /* Responsive adjustments */
+   @media (max-width: 600px) {
+     header h1 { font-size: 2rem; }
+     .tabs button { font-size: 1rem; }
+   }
+ </style>
+</head>
+<body>
+ <!-- Fullscreen canvas for the animated starfield -->
+ <canvas id="starfield"></canvas>
+ 
+ <!-- Main content container -->
+ <div class="container">
+   <header>
+     <h1>MinecraftOffline.net</h1>
+     <p>A Simple Minecraft 1.21.4 Anarchy Server</p>
+   </header>
+   
+   <!-- Tab Navigation -->
+   <div class="tabs">
+     <button class="tab-btn active" data-tab="home">Home</button>
+     <button class="tab-btn" data-tab="game">Pointless Cube Game</button>
+     <button class="tab-btn" data-tab="donations">Donations</button>
+   </div>
+   
+   <!-- Tab Content Areas -->
+   <div id="home" class="tab-content active">
+     <h2>Home</h2>
+     <p>A simple Minecraft anarchy server with a few custom plugins.</p>
+     <p>Join our Discord community: <a href="https://discord.gg/a83FESY3jF" target="_blank" style="color:#007BFF;">discord.gg/a83FESY3jF</a></p>
+   </div>
+   
+   <div id="game" class="tab-content">
+     <h2>Pointless Cube Game</h2>
+     <p>Play a laggy cube game that is not Minecraft. Requires Keycloak authentication.</p>
+     <a href="/game" class="cta-button">Play</a>
+   </div>
+   
+   <div id="donations" class="tab-content">
+     <h2>Support Me</h2>
+     <p>The server costs about £40 per month to run. Help support it if you want.</p>
+     <ul>
+       <li><a href="https://ko-fi.com/lolwhatyesme" target="_blank" style="color:#007BFF;">Donate via Ko-fi</a></li>
+       <li><a href="https://www.patreon.com/lolwhatyesme" target="_blank" style="color:#007BFF;">Support on Patreon</a></li>
+     </ul>
+   </div>
+   
+   <footer>
+     &copy; 2025 MinecraftOffline.net
+   </footer>
+ </div>
+ 
+ <script>
+   // --- Tab Switching ---
+   const tabButtons = document.querySelectorAll('.tab-btn');
+   const tabContents = document.querySelectorAll('.tab-content');
+   tabButtons.forEach(btn => {
+     btn.addEventListener('click', () => {
+       tabButtons.forEach(b => b.classList.remove('active'));
+       tabContents.forEach(content => content.classList.remove('active'));
+       btn.classList.add('active');
+       document.getElementById(btn.getAttribute('data-tab')).classList.add('active');
+     });
+   });
+   
+   // --- Starfield Animation ---
+   const canvas = document.getElementById('starfield');
+   const ctx = canvas.getContext('2d');
+
+   // Set canvas to full window size
+   function setCanvasSize() {
+       canvas.width = window.innerWidth;
+       canvas.height = window.innerHeight;
+   }
+   setCanvasSize();
+   window.addEventListener('resize', setCanvasSize);
+
+   // Star class
+   class Star {
+       constructor() {
+           this.reset();
+       }
+
+       reset() {
+           // Start at a random position
+           this.x = (Math.random() - 0.5) * canvas.width * 2;
+           this.y = (Math.random() - 0.5) * canvas.height * 2;
+           this.z = Math.random() * 2000;
+       }
+
+       update() {
+           // Move star closer
+           this.z -= 4;
+           
+           // Reset if too close
+           if (this.z <= 0) this.reset();
+       }
+
+       draw() {
+           // Project 3D position to 2D screen coordinates
+           const scale = 500 / this.z;
+           const x = canvas.width/2 + this.x * scale;
+           const y = canvas.height/2 + this.y * scale;
+
+           ctx.fillStyle = '#FFFFFF';
+           ctx.fillRect(x, y, 2, 2);
+       }
+   }
+
+   // Create stars
+   const stars = Array(500).fill().map(() => new Star());
+
+   // Animation loop
+   function animate() {
+       ctx.fillStyle = '#000000';
+       ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+       stars.forEach(star => {
+           star.update();
+           star.draw();
+       });
+
+       requestAnimationFrame(animate);
+   }
+
+   animate();
+ </script>
+</body>
+</html>
