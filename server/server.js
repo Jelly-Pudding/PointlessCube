@@ -238,13 +238,23 @@ async function updateCubeState(layers, currentLayer) {
 
 // Server setup
 const app = express();
-app.use(cors());
+
+// Configure CORS based on environment
+const isDevelopment = process.env.NODE_ENV === 'development';
+const corsOptions = {
+  origin: isDevelopment 
+    ? 'http://localhost:3000' 
+    : 'https://www.minecraftoffline.net',
+  methods: ['GET', 'POST'],
+  credentials: true
+};
+
+console.log('CORS configuration:', corsOptions);
+app.use(cors(corsOptions));
+
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
-  }
+  cors: corsOptions
 });
 
 // Socket middleware

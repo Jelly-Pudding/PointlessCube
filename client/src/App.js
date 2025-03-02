@@ -37,11 +37,32 @@ function App({ keycloak }) {
         clientId: keycloak.clientId
       });
 
-      const newSocket = io('/', {
-        path: '/api/socket.io',
-        auth: { token: keycloak.token },
-        transports: ['websocket'],
-      });
+      // Determine if we're in development or production
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      
+      // Configure socket connection based on environment
+      const socketConfig = isDevelopment 
+        ? {
+            // In development, connect directly to the server
+            url: 'http://localhost:4000',
+            options: {
+              auth: { token: keycloak.token },
+              transports: ['websocket'],
+            }
+          }
+        : {
+            // In production, use the existing configuration
+            url: '/',
+            options: {
+              path: '/api/socket.io',
+              auth: { token: keycloak.token },
+              transports: ['websocket'],
+            }
+          };
+      
+      console.log('Socket configuration:', socketConfig);
+      
+      const newSocket = io(socketConfig.url, socketConfig.options);
 
       newSocket.on('connect', () => {
         console.log('Socket connected successfully');
