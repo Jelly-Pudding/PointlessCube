@@ -392,9 +392,19 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('updatePoints', async ({ points }) => {
-    socket.userData.points += points;
+    // Calculate points with double multipliers
+    let pointsEarned = points;
+    
+    // Apply double points multipliers server-side to ensure consistency
+    if (socket.userData.owned_upgrades.includes('double')) pointsEarned *= 2;
+    if (socket.userData.owned_upgrades.includes('doublePro')) pointsEarned *= 2;
+    if (socket.userData.owned_upgrades.includes('doubleMax')) pointsEarned *= 2;
+    
+    // Update user data with the calculated points
+    socket.userData.points += pointsEarned;
     await updateUserData(socket.userId, socket.userData);
 
+    // Send updated user data back to client
     socket.emit('userData', {
       points: socket.userData.points,
       ownedUpgrades: socket.userData.owned_upgrades

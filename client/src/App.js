@@ -113,13 +113,17 @@ function App({ keycloak }) {
   }, [keycloak]);
 
   const handleBlockClick = useCallback(() => {
-    let pointsEarned = 1;
-    if (ownedUpgrades.includes('double')) pointsEarned *= 2;
-    if (ownedUpgrades.includes('doublePro')) pointsEarned *= 2;
-    if (ownedUpgrades.includes('doubleMax')) pointsEarned *= 2;
-    setPoints((prev) => prev + pointsEarned);
+    // For manual clicks, send base point value (1) to server
+    // Server will handle applying multipliers consistently
     if (socket) {
-      socket.emit('updatePoints', { points: pointsEarned });
+      socket.emit('updatePoints', { points: 1 });
+    } else {
+      // Fallback for offline mode
+      let pointsEarned = 1;
+      if (ownedUpgrades.includes('double')) pointsEarned *= 2;
+      if (ownedUpgrades.includes('doublePro')) pointsEarned *= 2;
+      if (ownedUpgrades.includes('doubleMax')) pointsEarned *= 2;
+      setPoints((prev) => prev + pointsEarned);
     }
   }, [ownedUpgrades, socket]);
 
