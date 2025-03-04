@@ -309,7 +309,7 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
         initialZoom.current = zoom;
       } else {
         let newZoom = initialZoom.current * (initialPinchDistance.current / currentDistance);
-        newZoom = Math.min(Math.max(newZoom, 700), 3000);
+        newZoom = Math.min(Math.max(newZoom, 700), 4500);
         setZoom(newZoom);
       }
       return;
@@ -358,7 +358,7 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
   const handleWheel = useCallback((e) => {
     e.preventDefault();
     const zoomFactor = Math.exp(e.deltaY * 0.001);
-    setZoom(prev => Math.min(Math.max(prev * zoomFactor, 800), 3000));
+    setZoom(prev => Math.min(Math.max(prev * zoomFactor, 700), 4500));
   }, []);
 
   useEffect(() => {
