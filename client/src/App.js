@@ -174,9 +174,9 @@ function App({ keycloak }) {
     let interval;
     if (layers && socket) {
       let delay = 1000;
-      if (ownedUpgrades.includes('autoClickerUltra')) delay = 100;
-      else if (ownedUpgrades.includes('autoClickerFast')) delay = 250;
-      else if (ownedUpgrades.includes('autoClicker')) delay = 1000;
+      if (ownedUpgrades.includes('autoClickerUltra')) delay = 500;
+      else if (ownedUpgrades.includes('autoClickerFast')) delay = 1000;
+      else if (ownedUpgrades.includes('autoClicker')) delay = 2000;
       
       if (ownedUpgrades.some(upgrade => upgrade.startsWith('autoClicker'))) {
         interval = setInterval(() => {
