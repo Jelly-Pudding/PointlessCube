@@ -6,6 +6,11 @@ import Leaderboard from './Leaderboard';
 import './App.css';
 import { io } from 'socket.io-client';
 
+// Memoize components for better performance
+const MemoMenu = React.memo(Menu);
+const MemoUpgrades = React.memo(Upgrades);
+const MemoLeaderboard = React.memo(Leaderboard);
+
 function App({ keycloak }) {
   const [points, setPoints] = useState(0);
   const [ownedUpgrades, setOwnedUpgrades] = useState([]);
@@ -189,7 +194,7 @@ function App({ keycloak }) {
 
   return (
     <div className="App">
-      <Menu
+      <MemoMenu
         onShowLeaderboard={handleShowLeaderboard}
         onShowUpgrades={handleShowUpgrades}
         points={points}
@@ -199,7 +204,7 @@ function App({ keycloak }) {
         onToggleMute={handleToggleMute}
       />
       {showUpgrades && (
-        <Upgrades
+        <MemoUpgrades
           points={points}
           upgrades={upgrades}
           ownedUpgrades={ownedUpgrades}
@@ -210,7 +215,7 @@ function App({ keycloak }) {
         />
       )}
       {showLeaderboard && (
-        <Leaderboard
+        <MemoLeaderboard
           socket={socket}
           onClose={handleCloseLeaderboard}
         />

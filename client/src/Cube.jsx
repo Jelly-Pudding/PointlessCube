@@ -4,68 +4,182 @@ import './Cube.css';
 const CUBE_SIZE = 600;
 const GRID_SIZE = 64;
 
+// Add deep, resonant sound effect as base64 data
+const SOUND_DATA = 'data:audio/wav;base64,UklGRiQDAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQADAAD//v38+/r5+Pb19PTz8vLx8fDw8PDw8PHx8vP09fb3+Pn6+/z9/v8AAQIDBAUGBwgICQoLCwwMDQ0NDQ0NDAwMCwoKCQgHBwYFBAMCAQD//v38+/r5+Pf29fTz8vLx8fDw8PDw8fHy8/T19vf4+fr7/P3+/wABAgMEBQYHCAgJCgsLDAwNDQ0NDQ0MDAsPpIKpfwQGBwMAAQD+/fz7+vn49/b19PPy8vHx8PDw8PHx8vP09fb3+Pn6+/z9/v8AAQIDBAUGBwgJCQoLCwwNDQ0NDQ0NDAwLCwoJCAcHBgUEAwIBAP/+/fz7+vn49/b19PPy8vHx8PDw8PHx8vP09fb3+Pn6+/z9/v8AAQIDBAUGBwgJCQoLCwwMDQ0NDQ0NDAwLCwoJCQcHBgUEAwIBAP/+/fz7+vn49/b19PPy8vHx8PDw8PHx8vP09fb3+Pn6+/z9/v8AAQIDBAUGBwgICQoKCwwMDQ0NDQ0NDAwLCwoJCQgHBgUEAwIBAP/+/fz7+vn49/b19PPy8vHw8PDw8PHx8vP09fb3+Pn6+/z9/v8AAQIDBAUGBwgICQoLCwwMDQ0NDQ0NDAwLCwoJCAcHBgUEAwIBAP/+/fz7+vn49/b19PPy8fHw8PDw8PHx8vP09fb3+Pn6+/z9/v8AAQIDBAUGBwgICQoLCwwMDQ0NDQ0NDAwLCwoJCAcHBgUEAwIBAP/+/fz7+vn49/b19PPy8fHx8PDw8PHx8vP09fb3+Pn6+/z9/v8AAQIDBAUGBwgJCQoLCwwMDQ0NDQ0NDAwLCwoJCAcHBgUEAwIB';
+
+// Particle pool to reuse DOM elements
+const particlePool = [];
+const MAX_POOL_SIZE = 15; // Maximum number of particles to keep in the pool
+
+// Global click throttling for rapid clicking
+let isThrottlingGlobal = false;
+const GLOBAL_THROTTLE_TIME = 15; // Reduced from 20ms to 15ms for more responsive clicking
+
+// Create a pool of audio elements for better performance
+const audioPool = [];
+for (let i = 0; i < 5; i++) { // Increase pool size from 3 to 5 for smoother playback
+  const audio = new Audio(SOUND_DATA);
+  audio.volume = 0.3; // Slightly increase volume for the deeper sound
+  audioPool.push(audio);
+}
+let lastAudioIndex = 0;
+
 const createBlockParticles = (e, blockColor, face, position) => {
+  // Get target element and its position
   const rect = e.target.getBoundingClientRect();
   const centerX = rect.left + rect.width / 2;
   const centerY = rect.top + rect.height / 2;
 
-  const particleCount = Math.floor(Math.random() * 3) + 2; // Random between 2 and 4
+  // Limit particles for better performance
+  const particleCount = 1; // Reduced from random 1-2 to fixed 1 for better performance
+  const particles = [];
+  
+  // Prepare all particles first
   for (let i = 0; i < particleCount; i++) {
-    const particle = document.createElement('div');
-    particle.className = 'block-particle';
+    // Try to get a particle from the pool first
+    let particle = particlePool.pop();
+    let isNewParticle = false;
+    
+    if (!particle) {
+      // Create a new particle if none available in the pool
+      particle = document.createElement('div');
+      particle.className = 'block-particle';
+      document.body.appendChild(particle);
+      isNewParticle = true;
+    } else {
+      // Reset the existing particle
+      particle.style.opacity = '1';
+    }
+    
+    // Initial setup
     particle.style.backgroundColor = blockColor;
-    document.body.appendChild(particle);
-
-    // Slightly larger particles
-    const size = Math.random() * 10 + 6;
+    const size = Math.random() * 8 + 5; // Reduced size for better performance
     particle.style.width = `${size}px`;
     particle.style.height = `${size}px`;
-
+    
     let px = centerX + (Math.random() - 0.5) * 5;
     let py = centerY + (Math.random() - 0.5) * 5;
-
     particle.style.left = `${px}px`;
     particle.style.top = `${py}px`;
-
-    // Slow, random initial direction
+    
+    // Calculate motion parameters
     const angle = Math.random() * Math.PI * 2;
     const velocity = Math.random() * 0.3 + 0.2;
-    let vx = Math.cos(angle) * velocity;
-    let vy = Math.sin(angle) * velocity;
-
-    let frame = 0;
-    const maxFrames = 180; // About 3 seconds at 60 fps
-    const gravity = -0.005; // A small negative value for a gentle upward drift
-
-    const animate = () => {
-      frame++;
-      vy += gravity;
-      px += vx;
-      py += vy;
-
-      const sizeRatio = 1 - frame / maxFrames;
-      particle.style.width = `${size * sizeRatio}px`;
-      particle.style.height = `${size * sizeRatio}px`;
-      particle.style.left = `${px}px`;
-      particle.style.top = `${py}px`;
-
-      // Fade out gradually, starting halfway through the lifespan
-      if (frame > maxFrames * 0.5) {
-        const fadeRatio = 1 - (frame - maxFrames * 0.5) / (maxFrames * 0.5);
-        particle.style.opacity = fadeRatio;
-      }
-
-      if (frame < maxFrames) {
-        requestAnimationFrame(animate);
-      } else {
-        particle.remove();
-      }
-    };
-    requestAnimationFrame(animate);
+    
+    // Store particle data
+    particles.push({
+      element: particle,
+      px,
+      py,
+      vx: Math.cos(angle) * velocity,
+      vy: Math.sin(angle) * velocity,
+      size,
+      frame: 0,
+      isNewParticle
+    });
   }
+  
+  // Use a single animation frame for all particles
+  const maxFrames = 80; // Reduced from 100 to 80 frames for faster animation
+  const gravity = -0.005;
+  
+  function animateAll() {
+    let allComplete = true;
+    
+    // Update all particles in a single frame
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      p.frame++;
+      
+      // Update position
+      p.vy += gravity;
+      p.px += p.vx;
+      p.py += p.vy;
+      
+      // Calculate size and opacity
+      const sizeRatio = 1 - p.frame / maxFrames;
+      let opacity = 1;
+      if (p.frame > maxFrames * 0.5) {
+        opacity = 1 - (p.frame - maxFrames * 0.5) / (maxFrames * 0.5);
+      }
+      
+      // Apply updates in a batch
+      const elem = p.element;
+      elem.style.width = `${p.size * sizeRatio}px`;
+      elem.style.height = `${p.size * sizeRatio}px`;
+      elem.style.left = `${p.px}px`;
+      elem.style.top = `${p.py}px`;
+      elem.style.opacity = opacity;
+      
+      // Check if this particle is still animating
+      if (p.frame < maxFrames) {
+        allComplete = false;
+      } else {
+        // Return to pool or remove
+        if (particlePool.length < MAX_POOL_SIZE) {
+          elem.style.opacity = '0';
+          particlePool.push(elem);
+        } else if (p.isNewParticle) {
+          elem.remove();
+        }
+      }
+    }
+    
+    // Continue animation if any particles are still active
+    if (!allComplete) {
+      requestAnimationFrame(animateAll);
+    }
+  }
+  
+  // Start animation in next frame
+  requestAnimationFrame(animateAll);
 };
 
+const Block = React.memo(({ isTopLayer, blockColor, row, col, faceName, handleClick }) => {
+  const blockStyle = useMemo(() => ({
+    backgroundColor: blockColor,
+    gridRow: row + 1,
+    gridColumn: col + 1,
+    cursor: isTopLayer ? 'pointer' : 'default',
+    touchAction: 'none'
+  }), [blockColor, row, col, isTopLayer]);
+  
+  const onClick = useCallback((e) => {
+    e.stopPropagation();
+    
+    if (!isTopLayer || isThrottlingGlobal) return;
+    
+    // Global throttle for rapid clicking
+    isThrottlingGlobal = true;
+    setTimeout(() => {
+      isThrottlingGlobal = false;
+    }, GLOBAL_THROTTLE_TIME);
+    
+    // Handle click immediately
+    handleClick(faceName, row, col);
+    
+    // Create particles in the next animation frame to reduce lag
+    requestAnimationFrame(() => {
+      createBlockParticles(e, blockColor, faceName, { row, col });
+    });
+  }, [isTopLayer, blockColor, row, col, faceName, handleClick]);
+  
+  return (
+    <button
+      onPointerDown={onClick}
+      className="grid-block"
+      style={blockStyle}
+    />
+  );
+}, (prevProps, nextProps) => 
+  prevProps.isTopLayer === nextProps.isTopLayer &&
+  prevProps.blockColor === nextProps.blockColor &&
+  prevProps.row === nextProps.row &&
+  prevProps.col === nextProps.col
+);
+
 const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize }) => {
+  // We'll handle debouncing at the block level, so we can simplify this
   const blocks = useMemo(() => {
     const visibleBlocks = [];
     for (let i = 0; i < gridSize; i++) {
@@ -86,23 +200,14 @@ const Face = React.memo(({ layers, faceName, handleClick, transform, gridSize })
 
         if (blockVisible) {
           visibleBlocks.push(
-            <button
+            <Block
               key={`${i}-${j}`}
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                if (isTopLayer) {
-                  createBlockParticles(e, blockColor, faceName, { row: i, col: j });
-                  handleClick(faceName, i, j);
-                }
-              }}
-              className="grid-block"
-              style={{
-                backgroundColor: blockColor,
-                gridRow: i + 1,
-                gridColumn: j + 1,
-                cursor: isTopLayer ? 'pointer' : 'default',
-                touchAction: 'none'
-              }}
+              isTopLayer={isTopLayer}
+              blockColor={blockColor}
+              row={i}
+              col={j}
+              faceName={faceName}
+              handleClick={handleClick}
             />
           );
         }
@@ -130,7 +235,6 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
   const [dragStartTime, setDragStartTime] = useState(null);
   const [lastPos, setLastPos] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1500);
-  const [audioContext, setAudioContext] = useState(null);
   const [lastPlayTime, setLastPlayTime] = useState(0);
 
   // For pointer tracking and throttling
@@ -142,53 +246,40 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
   const rotationSensitivity = 0.2;
   const DRAG_DELAY = 150;
 
-  const initAudioContext = useCallback(() => {
-    if (!audioContext) {
-      const ctx = new AudioContext();
-      const gain = ctx.createGain();
-      gain.connect(ctx.destination);
-      setAudioContext({ context: ctx, gainNode: gain });
-    }
-  }, [audioContext]);
-
-  const playBreakSound = useCallback(() => {
+  // Simple function to play a sound using our audio pool
+  const playSound = useCallback(() => {
     if (isMuted) return;
-    if (!audioContext) {
-      initAudioContext();
-      return;
-    }
-
+    
     const now = Date.now();
-    if (now - lastPlayTime < 30) return;
+    if (now - lastPlayTime < 25) return; // Slightly reduce throttling time for more responsive sound
     setLastPlayTime(now);
-
-    const oscillator = audioContext.context.createOscillator();
-    const tempGain = audioContext.context.createGain();
-
-    oscillator.connect(tempGain);
-    tempGain.connect(audioContext.context.destination);
-
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(200, audioContext.context.currentTime);
-    tempGain.gain.setValueAtTime(0.2, audioContext.context.currentTime);
-    oscillator.start(audioContext.context.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.context.currentTime + 0.1);
-    tempGain.gain.exponentialRampToValueAtTime(0.01, audioContext.context.currentTime + 0.15);
-    oscillator.stop(audioContext.context.currentTime + 0.15);
-
-    setTimeout(() => {
-      tempGain.disconnect();
-      oscillator.disconnect();
-    }, 200);
-  }, [audioContext, initAudioContext, lastPlayTime, isMuted]);
+    
+    // Schedule sound playback in the next animation frame to reduce main thread blocking
+    requestAnimationFrame(() => {
+      // Get the next audio element from the pool
+      lastAudioIndex = (lastAudioIndex + 1) % audioPool.length;
+      const audio = audioPool[lastAudioIndex];
+      
+      // Reset and play
+      audio.currentTime = 0;
+      audio.play().catch(e => console.log("Audio play error:", e));
+    });
+  }, [isMuted, lastPlayTime]);
 
   const handleBlockRemove = useCallback((face, row, col) => {
-    playBreakSound();
+    // Play sound immediately
+    playSound();
+    
+    // Call the click callback immediately to update local state
     onBlockClick?.();
+    
+    // Emit the socket event in the next event loop tick to avoid blocking the UI
     if (socket) {
-      socket.emit('removeBlock', { face, row, col });
+      setTimeout(() => {
+        socket.emit('removeBlock', { face, row, col });
+      }, 0);
     }
-  }, [socket, onBlockClick, playBreakSound]);
+  }, [socket, onBlockClick, playSound]);
 
   const handlePointerDown = useCallback((e) => {
     pointers.current[e.pointerId] = { x: e.clientX, y: e.clientY };
@@ -283,18 +374,27 @@ const Cube = forwardRef(({ onBlockClick, layers, socket, isMuted }, forwardedRef
   useImperativeHandle(forwardedRef, () => ({
     requestRandomBlockRemoval() {
       if (!layers) return;
+      
+      // Find visible blocks in a more optimized way (avoid unnecessary loops)
       const faceNames = ['front', 'back', 'top', 'bottom', 'left', 'right'];
       const visibleBlocks = [];
 
-      faceNames.forEach((face) => {
-        layers[0][face].forEach((row, rowIndex) => {
-          row.forEach((block, colIndex) => {
-            if (block) {
+      // Only check the top layer (index 0) for performance
+      const topLayer = layers[0];
+      
+      for (let faceIndex = 0; faceIndex < faceNames.length; faceIndex++) {
+        const face = faceNames[faceIndex];
+        const grid = topLayer[face];
+        
+        for (let rowIndex = 0; rowIndex < grid.length; rowIndex++) {
+          const row = grid[rowIndex];
+          for (let colIndex = 0; colIndex < row.length; colIndex++) {
+            if (row[colIndex]) {
               visibleBlocks.push({ face, row: rowIndex, col: colIndex });
             }
-          });
-        });
-      });
+          }
+        }
+      }
 
       if (visibleBlocks.length > 0) {
         const randomIndex = Math.floor(Math.random() * visibleBlocks.length);

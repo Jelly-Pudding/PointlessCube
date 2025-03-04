@@ -12,6 +12,7 @@
   width: 600px;
   height: 600px;
   cursor: grab;
+  transform: translateZ(0);
 }
 
 .cube {
