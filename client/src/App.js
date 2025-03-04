@@ -206,6 +206,9 @@ function App({ keycloak }) {
         onSignOut={handleSignOut}
         isMuted={isMuted}
         onToggleMute={handleToggleMute}
+        ownedUpgrades={ownedUpgrades}
+        nukerCooldown={nukerCooldown}
+        onNuker={handleNuker}
       />
       {showUpgrades && (
         <MemoUpgrades

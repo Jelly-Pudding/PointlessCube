@@ -32,6 +32,17 @@
   background-color: #B91C1C;
 }
 
+.menu button.disabled,
+.menu button:disabled {
+  background-color: #555;
+  cursor: not-allowed;
+}
+
+.menu button.disabled:hover,
+.menu button:disabled:hover {
+  background-color: #555;
+}
+
 .menu .points-display {
   margin-bottom: 10px;
   font-size: 18px;
